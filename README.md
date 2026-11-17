@@ -17,6 +17,7 @@ Los documentos de diseño están en [`docs/`](docs/): las instrucciones original
 ## Estructura
 
 ```
+crear_subcuenta.py       # paso 0: crea la subcuenta de GHL en el navegador (Playwright + Brave)
 alta.py                  # alta completa de una clínica (GHL + Retell + registro)
 clinicas.example.json    # ejemplo de datos de clínicas (copiar a clinicas.json)
 ghl-alta/
@@ -47,9 +48,20 @@ Al instalar la app, elegí la agencia y marcá que se instale en todas las subcu
 
 ## Dar de alta una clínica
 
-1. Creá la subcuenta a mano en GHL. Con el plan actual la API no lo permite: requiere Agency Pro.
-2. Confirmá que la app quedó instalada: `cd ghl-alta && ../.venv/bin/python ghl_oauth.py subcuentas`.
-3. Corré el alta:
+Con el plan actual, la API de GHL no permite crear subcuentas: requiere Agency Pro. Por eso el paso 0 (`crear_subcuenta.py`) completa el formulario del panel en el navegador. Usa un Brave ya abierto y logueado en GHL, así no maneja credenciales:
+
+```bash
+brave-browser --remote-debugging-port=9222          # e iniciá sesión en GHL
+.venv/bin/python crear_subcuenta.py <slug> --alta   # crea la subcuenta y corre el alta completa
+```
+
+`crear_subcuenta.py`:
+- Si ya existe una subcuenta con el nombre de la clínica, la reutiliza.
+- Si no, la crea con el snapshot "Blank Snapshot" (se cambia con `--snapshot`) y toma el `locationId` de la URL.
+- Espera a que se instale la app de Marketplace.
+- Con `--alta`, sigue con `alta.py`. Si algo falla, guarda una captura en `error_crear_subcuenta.png`.
+
+Si la subcuenta ya está creada, el alta se puede correr sola:
 
 ```bash
 .venv/bin/python alta.py <slug> --location <locationId> --dry-run   # ver qué haría
@@ -97,7 +109,7 @@ Para probar un agente: con el middleware y ngrok corriendo, entrá a Retell → 
 
 ## Limitaciones conocidas (demo)
 
-- Las subcuentas de GHL se crean a mano: la API requiere Agency Pro.
+- Las subcuentas de GHL se crean desde el navegador (la API requiere Agency Pro). Si GHL cambia su panel, hay que ajustar `crear_subcuenta.py`.
 - Los correos salen del dominio compartido de GHL y suelen llegar a spam.
 - El middleware corre en local: si ngrok o la máquina se apagan, el agente no puede usar sus herramientas. El prompt le indica tomar los datos y avisar que la clínica va a llamar.
 - Sin Twilio todavía: el agente se prueba con llamadas web y pide el teléfono al paciente.

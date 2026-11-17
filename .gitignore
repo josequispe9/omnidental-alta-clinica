@@ -12,3 +12,5 @@ llamadas.json
 .venv/
 __pycache__/
 *.pyc
+error_crear_subcuenta.png
+ghl_crear_subcuenta_acciones.txt
