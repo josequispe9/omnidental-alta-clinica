@@ -27,15 +27,38 @@
     "calendario": {
       "nombre": "Primera consulta",
       "duracion_min": 30,
-      "dias": [
-        1,
-        2,
-        3,
-        4,
-        5
-      ],
-      "abre": "09:00",
-      "cierra": "19:00"
+      "horario": {
+        "lunes": [
+          [
+            "09:00",
+            "19:00"
+          ]
+        ],
+        "martes": [
+          [
+            "09:00",
+            "19:00"
+          ]
+        ],
+        "miercoles": [
+          [
+            "09:00",
+            "19:00"
+          ]
+        ],
+        "jueves": [
+          [
+            "09:00",
+            "19:00"
+          ]
+        ],
+        "viernes": [
+          [
+            "09:00",
+            "19:00"
+          ]
+        ]
+      }
     },
     "custom_values": {
       "Direccion": "Av. San Martin 1200, Mendoza",
@@ -124,16 +147,44 @@
     "calendario": {
       "nombre": "Consulta odontologica",
       "duracion_min": 45,
-      "dias": [
-        1,
-        2,
-        3,
-        4,
-        5,
-        6
-      ],
-      "abre": "08:00",
-      "cierra": "17:00"
+      "horario": {
+        "lunes": [
+          [
+            "08:00",
+            "17:00"
+          ]
+        ],
+        "martes": [
+          [
+            "08:00",
+            "17:00"
+          ]
+        ],
+        "miercoles": [
+          [
+            "08:00",
+            "17:00"
+          ]
+        ],
+        "jueves": [
+          [
+            "08:00",
+            "17:00"
+          ]
+        ],
+        "viernes": [
+          [
+            "08:00",
+            "17:00"
+          ]
+        ],
+        "sabado": [
+          [
+            "08:00",
+            "17:00"
+          ]
+        ]
+      }
     },
     "custom_values": {
       "Direccion": "Av. Cabildo 2450, Belgrano, CABA",
@@ -221,20 +272,59 @@
     "calendario": {
       "nombre": "Primera visita",
       "duracion_min": 30,
-      "dias": [
-        1,
-        2,
-        3,
-        4,
-        5
-      ],
-      "abre": "10:00",
-      "cierra": "20:00"
+      "horario": {
+        "lunes": [
+          [
+            "10:00",
+            "14:00"
+          ],
+          [
+            "16:00",
+            "20:00"
+          ]
+        ],
+        "martes": [
+          [
+            "10:00",
+            "14:00"
+          ],
+          [
+            "16:00",
+            "20:00"
+          ]
+        ],
+        "miercoles": [
+          [
+            "10:00",
+            "14:00"
+          ],
+          [
+            "16:00",
+            "20:00"
+          ]
+        ],
+        "jueves": [
+          [
+            "10:00",
+            "14:00"
+          ],
+          [
+            "16:00",
+            "20:00"
+          ]
+        ],
+        "viernes": [
+          [
+            "10:00",
+            "15:00"
+          ]
+        ]
+      }
     },
     "custom_values": {
       "Direccion": "Calle de Alcala 150, 28009 Madrid",
       "Telefono": "+34910000003",
-      "Horario": "Lunes a viernes de 10 a 20 h",
+      "Horario": "Lunes a jueves de 10 a 14 y de 16 a 20 h; viernes de 10 a 15 h",
       "Profesional": "Dr. Carlos Navarro"
     },
     "pipeline": {

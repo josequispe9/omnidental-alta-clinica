@@ -14,3 +14,6 @@ __pycache__/
 *.pyc
 error_crear_subcuenta.png
 ghl_crear_subcuenta_acciones.txt
+
+# Borradores de extraer_web.py (datos de webs de terceros)
+borradores/

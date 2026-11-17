@@ -1,11 +1,32 @@
 """Arma el prompt del agente de Retell a partir de los datos de la clínica (clinicas.json)."""
 
-DIAS = {1: "lunes", 2: "martes", 3: "miercoles", 4: "jueves", 5: "viernes", 6: "sabado", 7: "domingo"}
+DIAS = ["lunes", "martes", "miercoles", "jueves", "viernes", "sabado", "domingo"]
 
 
-def _dias(dias):
-    nombres = [DIAS[d] for d in dias]
-    return ", ".join(nombres[:-1]) + " y " + nombres[-1] if len(nombres) > 1 else nombres[0]
+def _hora(t):
+    h, m = t.split(":")
+    return f"{int(h)}" if m == "00" else f"{int(h)}:{m}"
+
+
+def _horario(horario):
+    """{"lunes": [["09:30","13:30"],["16:30","20:30"]], ...} -> texto por día; agrupa días seguidos iguales."""
+    grupos = []  # [[dias], tramos]
+    for d in DIAS:
+        tramos = horario.get(d)
+        if not tramos:
+            continue
+        if grupos and grupos[-1][1] == tramos and DIAS.index(grupos[-1][0][-1]) == DIAS.index(d) - 1:
+            grupos[-1][0].append(d)
+        else:
+            grupos.append([[d], tramos])
+    lineas = []
+    for dias, tramos in grupos:
+        nombre = dias[0] if len(dias) == 1 else f"{dias[0]} {'y' if len(dias) == 2 else 'a'} {dias[-1]}"
+        lineas.append(f"  - {nombre}: " + " y ".join(f"de {_hora(a)} a {_hora(b)}" for a, b in tramos))
+    cerrados = [d for d in DIAS if not horario.get(d)]
+    if cerrados:
+        lineas.append(f"  - cerrado: {', '.join(cerrados)}")
+    return "\n".join(lineas)
 
 
 def armar_prompt(c):
@@ -34,7 +55,8 @@ Las fechas que pases a las herramientas van en formato AAAA-MM-DD y las horas en
 ## Datos de la clinica
 - Direccion: {p['direccion']}, {p['ciudad']}
 - Telefono: {p['telefono']}
-- Horario de atencion: {_dias(cal['dias'])} de {cal['abre']} a {cal['cierra']}
+- Horario de atencion:
+{_horario(cal['horario'])}
 - Profesional: {c['custom_values'].get('Profesional', c['profesional']['nombre'] + ' ' + c['profesional']['apellido'])}
 - Los turnos de "{cal['nombre']}" duran {cal['duracion_min']} minutos.
 

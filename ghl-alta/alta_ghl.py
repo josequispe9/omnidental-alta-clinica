@@ -138,15 +138,30 @@ def crear_profesional(sub, cfg, company_id, location_id):
     return u.get("id") or u.get("user", {}).get("id")
 
 
-def horario(cal):
-    """openHours de GHL: una entrada por día (0=domingo ... 6=sábado)."""
-    oh, om = hhmm(cal["abre"])
-    ch, cm = hhmm(cal["cierra"])
-    return [{"daysOfTheWeek": [dia], "hours": [{"openHour": oh, "openMinute": om, "closeHour": ch, "closeMinute": cm}]}
-            for dia in cal["dias"]]
-
-
+# clinicas.json: calendario.horario = {"lunes": [["09:30", "13:30"], ["16:30", "20:30"]], ...}
+DIAS_SEMANA = ["domingo", "lunes", "martes", "miercoles", "jueves", "viernes", "sabado"]  # índice = día de GHL
 DIAS_GHL = ["sunday", "monday", "tuesday", "wednesday", "thursday", "friday", "saturday"]
+
+
+def dias_abiertos(cal):
+    """[(número de día GHL 0=domingo, [[desde, hasta], ...]), ...] en orden de semana."""
+    h = cal["horario"]
+    desconocidos = set(h) - set(DIAS_SEMANA)
+    if desconocidos:
+        raise ValueError(f"Días desconocidos en calendario.horario: {sorted(desconocidos)}")
+    return [(DIAS_SEMANA.index(d), h[d]) for d in DIAS_SEMANA if h.get(d)]
+
+
+def horario(cal):
+    """openHours de GHL: una entrada por día, con uno o más intervalos (turno partido)."""
+    salida = []
+    for dia, tramos in dias_abiertos(cal):
+        horas = []
+        for desde, hasta in tramos:
+            (oh, om), (ch, cm) = hhmm(desde), hhmm(hasta)
+            horas.append({"openHour": oh, "openMinute": om, "closeHour": ch, "closeMinute": cm})
+        salida.append({"daysOfTheWeek": [dia], "hours": horas})
+    return salida
 
 
 def igualar_horario_profesional(sub, cfg, location_id, user_id, calendar_id):
@@ -162,11 +177,11 @@ def igualar_horario_profesional(sub, cfg, location_id, user_id, calendar_id):
         return None
     h = horarios[0]
     sub.pedir("PUT", f"/calendars/schedules/{h['id']}", json={
-        "rules": [{"type": "wday", "day": DIAS_GHL[d], "intervals": [{"from": cal["abre"], "to": cal["cierra"]}]}
-                  for d in cal["dias"]],
+        "rules": [{"type": "wday", "day": DIAS_GHL[d], "intervals": [{"from": a, "to": b} for a, b in tramos]}
+                  for d, tramos in dias_abiertos(cal)],
         "calendarIds": sorted(set((h.get("calendarIds") or []) + [calendar_id])),
     })
-    print(f"    {h.get('name')}: {len(cal['dias'])} días de {cal['abre']} a {cal['cierra']}, vinculado al calendario")
+    print(f"    {h.get('name')}: {len(dias_abiertos(cal))} días con el horario de la clínica, vinculado al calendario")
     return h["id"]
 
 
@@ -176,7 +191,12 @@ def crear_calendario(sub, cfg, location_id, user_id):
     existentes = sub.pedir("GET", "/calendars/", params={"locationId": location_id}).get("calendars", [])
     for c in existentes:
         if c.get("name") == cal["nombre"]:
-            print("    ya existía, se reutiliza")
+            # se actualizan horario y duración por si cambiaron en clinicas.json
+            sub.pedir("PUT", f"/calendars/{c['id']}", json={
+                "slotDuration": cal["duracion_min"], "slotDurationUnit": "mins",
+                "slotInterval": cal["duracion_min"], "slotIntervalUnit": "mins",
+                "openHours": horario(cal)})
+            print("    ya existía: se actualizaron horario y duración")
             return c["id"]
     c = sub.pedir("POST", "/calendars/", json={
         "locationId": location_id,

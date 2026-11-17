@@ -17,6 +17,7 @@ Los documentos de diseño están en [`docs/`](docs/): las instrucciones original
 ## Estructura
 
 ```
+extraer_web.py           # arma un borrador de clinicas.json leyendo la web de la clínica (Playwright + Claude)
 crear_subcuenta.py       # paso 0: crea la subcuenta de GHL en el navegador (Playwright + Brave)
 alta.py                  # alta completa de una clínica (GHL + Retell + registro)
 clinicas.example.json    # ejemplo de datos de clínicas (copiar a clinicas.json)
@@ -32,7 +33,7 @@ middleware/
   probar_ghl.py          # prueba las funciones de GHL y borra lo que crea
 ```
 
-Archivos locales que **no** se suben: `.env`, `clinicas.json`, `registro.json` (IDs y secretos de cada clínica), `llamadas.json`, `ghl-alta/.ghl_oauth.json` (tokens OAuth) y los logs.
+Archivos locales que **no** se suben: `.env`, `clinicas.json`, `borradores/`, `registro.json` (IDs y secretos de cada clínica), `llamadas.json`, `ghl-alta/.ghl_oauth.json` (tokens OAuth) y los logs.
 
 ## Configuración (una sola vez)
 
@@ -45,6 +46,33 @@ cd ghl-alta && ../.venv/bin/python ghl_oauth.py instalar   # instala la app de M
 ```
 
 Al instalar la app, elegí la agencia y marcá que se instale en todas las subcuentas, también las futuras.
+
+## Cargar los datos de la clínica desde su web
+
+```bash
+.venv/bin/python extraer_web.py https://www.clinica.com
+```
+
+- Recorre la web: unas 25 páginas útiles (contacto, aviso legal, equipo, servicios, precios, preguntas frecuentes), sin blog ni otros idiomas. Si la web tiene captcha, usa un navegador.
+- Toma los teléfonos, emails y WhatsApp de los links y los datos de schema.org. Con eso y el texto de las páginas, Claude arma la ficha sin inventar datos.
+- Guarda `borradores/<dominio>.json` con una entrada de `clinicas.json` por sede. Además incluye:
+  - lo que hay que completar (marcado como `COMPLETAR`)
+  - los datos que la web no publica
+  - las contradicciones entre páginas
+  - la URL de donde salió cada dato
+- **No toca `clinicas.json`**: revisá el borrador, completá lo que falte y copiá la entrada.
+
+Detalles de la estrategia en [`docs/estrategia-extraccion-web.md`](docs/estrategia-extraccion-web.md).
+
+### Horario
+
+`calendario.horario` tiene un horario por día, con uno o más tramos, para cubrir el turno partido. Los días que no figuran son días cerrados:
+
+```json
+"horario": {"lunes": [["09:30", "13:30"], ["16:30", "20:30"]], "viernes": [["09:30", "14:00"]]}
+```
+
+El alta lo carga en el calendario de GHL y en el horario de trabajo del profesional, y el agente lo recibe en su prompt.
 
 ## Dar de alta una clínica
 
