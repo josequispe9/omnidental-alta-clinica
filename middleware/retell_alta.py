@@ -96,6 +96,25 @@ def cuerpo_llm(c, token):
     }
 
 
+def palabras_clave(c):
+    """Nombres propios que el reconocimiento de voz suele escribir mal: clínica, profesionales, calle, ciudad
+    y tratamientos. Retell los usa para sesgar la transcripción (boosted_keywords)."""
+    import re
+    p = c["perfil"]
+    personas = [c["profesional"]] + c.get("equipo", [])
+    candidatas = [c["clinica"], c["agente"]["nombre_asistente"], p.get("ciudad", ""),
+                  re.split(r"\s*\d|,", p.get("direccion", ""))[0]]
+    candidatas += [x for m in personas for x in (m.get("nombre", ""), m.get("apellido", ""))]
+    candidatas += [s["nombre"] for s in c.get("servicios", []) if len(s["nombre"].split()) <= 3]
+    vistas, salida = set(), []
+    for x in candidatas:
+        x = x.strip()
+        if x and x != "COMPLETAR" and x.lower() not in vistas:
+            vistas.add(x.lower())
+            salida.append(x)
+    return salida[:40]
+
+
 def cuerpo_agente(c, llm_id, token):
     a = c["agente"]
     return {
@@ -104,6 +123,7 @@ def cuerpo_agente(c, llm_id, token):
         "voice_id": a["voz"],
         "language": a["idioma"],
         "timezone": c["perfil"]["timezone"],
+        "boosted_keywords": palabras_clave(c),
         "webhook_url": f"{os.environ['MIDDLEWARE_URL'].rstrip('/')}/retell/webhook?token={token}",
         "webhook_events": ["call_analyzed"],
         "post_call_analysis_data": [

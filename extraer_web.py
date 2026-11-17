@@ -391,6 +391,7 @@ class Sede(BaseModel):
     pais: str = Field(description="ISO 2 letras")
     telefono: str = Field(description="Formato internacional")
     whatsapp: str
+    telefonos_adicionales: list[str] = Field(description="Otros teléfonos de la sede, formato internacional")
     email: str
     horario: list[Tramo] = Field(description="Un tramo por día y turno. Vacío si la web no publica horario")
     horario_texto: str = Field(description="El horario como lo escribe la web")
@@ -436,6 +437,9 @@ class Ficha(BaseModel):
     asistente_idioma: str = Field(description="es-ES para España, es-419 para Latinoamérica")
     asistente_saludo: str = Field(description="Saludo telefónico breve con el nombre de la clínica y del asistente, "
                                               "sin 'buenos días' ni 'buenas tardes' (se usa a cualquier hora)")
+    informacion_util: list[str] = Field(description="Datos útiles para un paciente que llama, en frases cortas: "
+                                         "estacionamiento, accesibilidad, financiación, seguros y mutuas, idiomas, "
+                                         "si la primera visita es gratis, etc. Solo lo que la web dice")
     sistemas_de_turnos: list[str] = Field(description="Plataformas externas de turnos detectadas")
     faltantes: list[str] = Field(description="Datos que el alta necesita y la web no publica")
     contradicciones: list[str] = Field(description="Campo, valores con su URL y cuál se eligió")
@@ -459,6 +463,8 @@ son dos tramos para cada día de lunes a viernes. Si la web no publica horario, 
 - Teléfonos en formato internacional (+34..., +54...). El país sale de la dirección, el prefijo o el dominio.
 - Servicios: los tratamientos que ofrece, con el precio solo si la web lo publica.
 - Profesionales: solo odontólogos y personal clínico con nombre. Marcá quién es el director o titular si se dice.
+- "informacion_util" es lo que la recepcionista le contaría a un paciente (estacionamiento, financiación, seguros, \
+idiomas...). Lo interno o para quien revisa (web desactualizada, colegiados, redes sociales) va en "observaciones".
 - "faltantes" debe incluir siempre los datos que el alta necesita y no están: email de la clínica, horario, \
 profesional, precios, etc.
 - El agente (nombre, idioma y saludo) es una sugerencia tuya: idioma es-ES para España y es-419 para Latinoamérica.
@@ -554,6 +560,7 @@ def a_clinicas(f, web):
         # profesional del alta: el titular de esta sede, o el de la clínica, o el primero
         de_sede = [p for p in f.profesionales if not p.sede or p.sede.lower() in s.nombre.lower()
                    or s.nombre.lower() in p.sede.lower()] or f.profesionales
+        equipo = de_sede
         director = next((p for p in de_sede if p.es_director and p.sede), None) or \
             next((p for p in de_sede if p.es_director), de_sede[0] if de_sede else None)
         horario = horario_dict(s.horario)
@@ -585,10 +592,21 @@ def a_clinicas(f, web):
                 "Telefono": tel(s.telefono) or REVISAR,
                 "Horario": texto_horario(horario) if horario else REVISAR,
                 "Profesional": nombre_prof,
+                **({"Email": s.email} if s.email else {}),
+                **({"WhatsApp": tel(s.whatsapp)} if s.whatsapp else {}),
             },
             "pipeline": {"nombre": "Pacientes", "etapas": ["Nuevo contacto", "Turno agendado", "Asistio", "No asistio"]},
             "servicios": [{"nombre": x.nombre, "precio": x.precio or "Consultar en la clinica"} for x in f.servicios],
             "faq": [{"pregunta": q.pregunta, "respuesta": q.respuesta} for q in f.faq],
+            "equipo": [{"titulo": m.titulo, "nombre": m.nombre, "apellido": m.apellido,
+                        "especialidad": m.especialidad} for m in equipo],
+            "informacion_util": f.informacion_util + (
+                [f"Urgencias: {f.urgencias_texto}"]
+                if f.urgencias_texto and not any("urgenc" in x.lower() for x in f.informacion_util) else []),
+            "contacto_extra": {k: v for k, v in (
+                ("whatsapp", tel(s.whatsapp)),
+                ("telefonos", [tel(t) for t in s.telefonos_adicionales if tel(t) and tel(t) != tel(s.telefono)]))
+                if v},
             "urgencias": urgencias,
             "agente": {"nombre_asistente": f.asistente_nombre, "idioma": idioma,
                        "voz": VOZ[idioma], "saludo": f.asistente_saludo},

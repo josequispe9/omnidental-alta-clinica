@@ -74,6 +74,17 @@ Detalles de la estrategia en [`docs/estrategia-extraccion-web.md`](docs/estrateg
 
 El alta lo carga en el calendario de GHL y en el horario de trabajo del profesional, y el agente lo recibe en su prompt.
 
+### Campos opcionales (los completa `extraer_web.py`)
+
+| Campo | Para qué |
+|---|---|
+| `equipo` | Profesionales con título y especialidad. El agente responde quién atiende cada especialidad. Los turnos se siguen agendando en el calendario único. |
+| `informacion_util` | Estacionamiento, financiación, seguros, idiomas, primera visita gratis... El agente lo usa para responder. |
+| `contacto_extra` | WhatsApp y otros teléfonos. Van al prompt. |
+| `custom_values.Email` / `.WhatsApp` | Se crean como custom values en GHL. |
+
+Además, el agente de Retell recibe como `boosted_keywords` los nombres de la clínica, los profesionales, la calle y los tratamientos, para que el reconocimiento de voz los transcriba bien.
+
 ## Dar de alta una clínica
 
 Con el plan actual, la API de GHL no permite crear subcuentas: requiere Agency Pro. Por eso el paso 0 (`crear_subcuenta.py`) completa el formulario del panel en el navegador. Usa un Brave ya abierto y logueado en GHL, así no maneja credenciales:

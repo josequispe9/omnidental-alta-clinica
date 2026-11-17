@@ -43,6 +43,23 @@ def armar_prompt(c):
                           "y, al final, indica en la conversacion que es una urgencia.")
     trato = "de usted" if a["idioma"] == "es-ES" else "de vos (espanol rioplatense neutro)"
 
+    # Campos opcionales (los completa extraer_web.py): si no están, el prompt queda como antes
+    extra = c.get("contacto_extra", {})
+    contacto = "".join(f"\n- {k}: {v}" for k, v in (
+        ("WhatsApp", extra.get("whatsapp")), ("Otros telefonos", ", ".join(extra.get("telefonos", []))),
+        ("Correo de la clinica", p.get("email") if extra else None)) if v)
+    equipo = "\n".join("- " + " ".join(x for x in (m.get("titulo"), m["nombre"], m.get("apellido")) if x)
+                       + (f": {m['especialidad']}" if m.get("especialidad") else "") for m in c.get("equipo", []))
+    seccion_equipo = (f"""
+## Equipo
+{equipo}
+Si preguntan por un profesional o una especialidad, contesta con esta lista. Los turnos se agendan en la agenda
+general de la clinica: si el paciente quiere un profesional en particular, anotalo y avisa que la clinica se lo
+confirma.
+""" if equipo else "")
+    info = "\n".join(f"- {x}" for x in c.get("informacion_util", []))
+    seccion_info = f"\n## Informacion util\n{info}\n" if info else ""
+
     return f"""## Rol
 Sos {a['nombre_asistente']}, la recepcionista virtual de {c['clinica']}, una clinica dental.
 Atendes llamadas telefonicas: respondes dudas simples y agendas turnos. Hablale {trato}, con frases cortas,
@@ -57,9 +74,9 @@ Las fechas que pases a las herramientas van en formato AAAA-MM-DD y las horas en
 - Telefono: {p['telefono']}
 - Horario de atencion:
 {_horario(cal['horario'])}
-- Profesional: {c['custom_values'].get('Profesional', c['profesional']['nombre'] + ' ' + c['profesional']['apellido'])}
+- Profesional: {c['custom_values'].get('Profesional', c['profesional']['nombre'] + ' ' + c['profesional']['apellido'])}{contacto}
 - Los turnos de "{cal['nombre']}" duran {cal['duracion_min']} minutos.
-
+{seccion_equipo}{seccion_info}
 ## Servicios y precios
 {servicios or '- Consultar en la clinica.'}
 
