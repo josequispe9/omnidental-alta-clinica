@@ -1,0 +1,293 @@
+[
+  {
+    "slug": "dental-sol",
+    "clinica": "Clinica Dental Sol",
+    "perfil": {
+      "telefono": "+542614000001",
+      "email": "contacto@dentalsol.example",
+      "direccion": "Av. San Martin 1200",
+      "ciudad": "Mendoza",
+      "provincia": "Mendoza",
+      "pais": "AR",
+      "cp": "5500",
+      "web": "https://dentalsol.example",
+      "timezone": "America/Argentina/Mendoza",
+      "contacto": {
+        "nombre": "Nombre",
+        "apellido": "Apellido",
+        "email": "dueno@ejemplo.com"
+      }
+    },
+    "profesional": {
+      "nombre": "Andres",
+      "apellido": "Yucra",
+      "email": "profesional+dental-sol@ejemplo.com",
+      "telefono": "+542614000101"
+    },
+    "calendario": {
+      "nombre": "Primera consulta",
+      "duracion_min": 30,
+      "dias": [
+        1,
+        2,
+        3,
+        4,
+        5
+      ],
+      "abre": "09:00",
+      "cierra": "19:00"
+    },
+    "custom_values": {
+      "Direccion": "Av. San Martin 1200, Mendoza",
+      "Telefono": "+542614000001",
+      "Horario": "Lunes a viernes de 9 a 19 h",
+      "Profesional": "Dr. Andres Yucra"
+    },
+    "pipeline": {
+      "nombre": "Pacientes",
+      "etapas": [
+        "Nuevo contacto",
+        "Turno agendado",
+        "Asistio",
+        "No asistio"
+      ]
+    },
+    "servicios": [
+      {
+        "nombre": "Primera consulta y diagnostico",
+        "precio": "ARS 25.000"
+      },
+      {
+        "nombre": "Limpieza dental",
+        "precio": "ARS 40.000"
+      },
+      {
+        "nombre": "Blanqueamiento",
+        "precio": "desde ARS 180.000"
+      },
+      {
+        "nombre": "Ortodoncia",
+        "precio": "se presupuesta en la primera consulta"
+      }
+    ],
+    "faq": [
+      {
+        "pregunta": "Atienden obras sociales?",
+        "respuesta": "Si, OSDE, Swiss Medical y Galeno. Hay que traer la credencial."
+      },
+      {
+        "pregunta": "Formas de pago?",
+        "respuesta": "Efectivo, transferencia y tarjetas de debito y credito (hasta 3 cuotas sin interes)."
+      },
+      {
+        "pregunta": "Hay estacionamiento?",
+        "respuesta": "No propio, pero hay un estacionamiento publico a media cuadra."
+      }
+    ],
+    "urgencias": {
+      "accion": "derivar",
+      "telefono": "+542614000999",
+      "texto": "Si es una urgencia (dolor fuerte, sangrado o golpe), llame a la guardia al 261 400 0999."
+    },
+    "agente": {
+      "nombre_asistente": "Sofia",
+      "idioma": "es-419",
+      "voz": "cartesia-Hailey-Spanish-latin-america",
+      "saludo": "Hola, gracias por llamar a Clinica Dental Sol, habla Sofia. En que te puedo ayudar?"
+    }
+  },
+  {
+    "slug": "sonrisa-plena",
+    "clinica": "Sonrisa Plena Odontologia",
+    "perfil": {
+      "telefono": "+541150000002",
+      "email": "turnos@sonrisaplena.example",
+      "direccion": "Av. Cabildo 2450",
+      "ciudad": "Buenos Aires",
+      "provincia": "CABA",
+      "pais": "AR",
+      "cp": "1428",
+      "web": "https://sonrisaplena.example",
+      "timezone": "America/Argentina/Buenos_Aires",
+      "contacto": {
+        "nombre": "Nombre",
+        "apellido": "Apellido",
+        "email": "dueno@ejemplo.com"
+      }
+    },
+    "profesional": {
+      "nombre": "Laura",
+      "apellido": "Benitez",
+      "email": "profesional+sonrisa-plena@ejemplo.com",
+      "telefono": "+541150000102"
+    },
+    "calendario": {
+      "nombre": "Consulta odontologica",
+      "duracion_min": 45,
+      "dias": [
+        1,
+        2,
+        3,
+        4,
+        5,
+        6
+      ],
+      "abre": "08:00",
+      "cierra": "17:00"
+    },
+    "custom_values": {
+      "Direccion": "Av. Cabildo 2450, Belgrano, CABA",
+      "Telefono": "+541150000002",
+      "Horario": "Lunes a sabado de 8 a 17 h",
+      "Profesional": "Dra. Laura Benitez"
+    },
+    "pipeline": {
+      "nombre": "Pacientes",
+      "etapas": [
+        "Nuevo contacto",
+        "Turno agendado",
+        "Asistio",
+        "No asistio"
+      ]
+    },
+    "servicios": [
+      {
+        "nombre": "Consulta general",
+        "precio": "ARS 30.000"
+      },
+      {
+        "nombre": "Odontopediatria",
+        "precio": "ARS 30.000"
+      },
+      {
+        "nombre": "Implantes",
+        "precio": "se presupuesta en la consulta"
+      },
+      {
+        "nombre": "Arreglos y caries",
+        "precio": "desde ARS 45.000"
+      }
+    ],
+    "faq": [
+      {
+        "pregunta": "Atienden chicos?",
+        "respuesta": "Si, la Dra. Benitez atiende ninos desde los 3 anos."
+      },
+      {
+        "pregunta": "Atienden obras sociales?",
+        "respuesta": "Solo atencion particular; entregamos factura para reintegro."
+      },
+      {
+        "pregunta": "Como llego?",
+        "respuesta": "A dos cuadras de la estacion Juramento de la linea D."
+      }
+    ],
+    "urgencias": {
+      "accion": "tomar_datos",
+      "texto": "Si es una urgencia, tomamos sus datos y la doctora lo llama en el dia."
+    },
+    "agente": {
+      "nombre_asistente": "Martina",
+      "idioma": "es-419",
+      "voz": "inworld-Lupita",
+      "saludo": "Hola, te comunicaste con Sonrisa Plena, soy Martina. Como te puedo ayudar?"
+    }
+  },
+  {
+    "slug": "dental-retiro",
+    "clinica": "Clinica Dental Retiro",
+    "perfil": {
+      "telefono": "+34910000003",
+      "email": "citas@dentalretiro.example",
+      "direccion": "Calle de Alcala 150",
+      "ciudad": "Madrid",
+      "provincia": "Madrid",
+      "pais": "ES",
+      "cp": "28009",
+      "web": "https://dentalretiro.example",
+      "timezone": "Europe/Madrid",
+      "contacto": {
+        "nombre": "Nombre",
+        "apellido": "Apellido",
+        "email": "dueno@ejemplo.com"
+      }
+    },
+    "profesional": {
+      "nombre": "Carlos",
+      "apellido": "Navarro",
+      "email": "profesional+dental-retiro@ejemplo.com",
+      "telefono": "+34910000103"
+    },
+    "calendario": {
+      "nombre": "Primera visita",
+      "duracion_min": 30,
+      "dias": [
+        1,
+        2,
+        3,
+        4,
+        5
+      ],
+      "abre": "10:00",
+      "cierra": "20:00"
+    },
+    "custom_values": {
+      "Direccion": "Calle de Alcala 150, 28009 Madrid",
+      "Telefono": "+34910000003",
+      "Horario": "Lunes a viernes de 10 a 20 h",
+      "Profesional": "Dr. Carlos Navarro"
+    },
+    "pipeline": {
+      "nombre": "Pacientes",
+      "etapas": [
+        "Nuevo contacto",
+        "Turno agendado",
+        "Asistio",
+        "No asistio"
+      ]
+    },
+    "servicios": [
+      {
+        "nombre": "Primera visita y revision",
+        "precio": "gratuita"
+      },
+      {
+        "nombre": "Higiene dental",
+        "precio": "60 EUR"
+      },
+      {
+        "nombre": "Endodoncia",
+        "precio": "desde 250 EUR"
+      },
+      {
+        "nombre": "Ortodoncia invisible",
+        "precio": "se presupuesta en la primera visita"
+      }
+    ],
+    "faq": [
+      {
+        "pregunta": "Trabajan con seguros?",
+        "respuesta": "Si, con Sanitas, Adeslas y DKV."
+      },
+      {
+        "pregunta": "Se puede financiar?",
+        "respuesta": "Si, hasta 12 meses sin intereses en tratamientos de mas de 600 EUR."
+      },
+      {
+        "pregunta": "Como llego?",
+        "respuesta": "Metro Goya o Principe de Vergara, a cinco minutos andando."
+      }
+    ],
+    "urgencias": {
+      "accion": "derivar",
+      "telefono": "+34910000999",
+      "texto": "Si es una urgencia, llame al 910 000 999, atendemos urgencias todos los dias."
+    },
+    "agente": {
+      "nombre_asistente": "Lucia",
+      "idioma": "es-ES",
+      "voz": "cartesia-Isabel",
+      "saludo": "Hola, Clinica Dental Retiro, le atiende Lucia. En que puedo ayudarle?"
+    }
+  }
+]

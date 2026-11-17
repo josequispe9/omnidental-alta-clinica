@@ -1,0 +1,111 @@
+ALTA DE CLINICAS DENTALES: GHL + RETELL + MIDDLEWARE
+=====================================================
+
+Objetivo
+--------
+Una automatizacion que da de alta cada clinica dental que gestiona la agencia:
+- una subcuenta de GHL configurada con la info de la clinica
+- un agente de voz de Retell creado con la info de la clinica
+- ambos conectados por un middleware en Python que corre en local
+
+Integracion:  [Retell] <-> [Middleware (local + ngrok)] <-> [GHL]
+
+Por ahora sin Twilio: el agente se prueba con "web calls" de Retell (desde el navegador / panel).
+El ID de cada clinica es el locationId de su subcuenta de GHL.
+
+
+1. Datos de cada clinica (clinicas.json, simular 3 clinicas)
+-------------------------------------------------------------
+Clinica:      nombre, telefono, correo, direccion, ciudad, pais, sitio web
+Zona horaria: ej. America/Argentina/Mendoza (se usa en GHL, en el agente y en el middleware)
+Contacto:     nombre y correo del dueno / responsable
+Profesionales: nombre, correo, telefono (uno o varios)
+Agenda:       dias y horarios de atencion, duracion del turno
+Servicios:    lista de tratamientos con precio o rango (opcional)
+FAQ:          preguntas frecuentes con su respuesta (obras sociales, formas de pago, estacionamiento, etc.)
+Agente:       idioma (es-ES / es-419), voz, saludo inicial, nombre del asistente
+Embudo:       etapas (Nuevo contacto, Turno agendado, Asistio, No asistio)
+Urgencias:    que hacer si el paciente tiene una urgencia (telefono al que derivar o tomar datos)
+
+
+2. Alta de la subcuenta de GHL
+------------------------------
+La subcuenta se crea A MANO en el panel de GHL: con el plan actual la API no lo permite
+(403 "The company does not have access to this feature", requiere Agency Pro).
+El script recibe el locationId y hace el resto:
+
+- Completar el perfil de la clinica (nombre, direccion, telefono, zona horaria)   [token de agencia]
+- Crear el usuario del profesional
+- Crear el calendario (horarios, duracion del turno, profesional asignado)
+- Desactivar el calendario de ejemplo que trae GHL
+- Crear los custom values de la clinica
+- Crear las notificaciones por email del turno (al paciente y al profesional)
+- Crear el embudo "Pacientes" con sus etapas
+  (las oportunidades NO se crean en el alta: las crea el middleware cuando el agente agenda un turno)
+
+No hace falta crear workflows en GHL. Estas funciones ya existen en la API de GHL y las usa el middleware:
+- Crear cliente (sin duplicar):          POST /contacts/upsert
+- Revisar disponibilidad:                GET  /calendars/{id}/free-slots
+- Agendar cita:                          POST /calendars/events/appointments
+- Enviar correo al cliente:              POST /conversations/messages
+  (ojo: con el dominio compartido de GHL los correos llegan a spam; para produccion hace falta un dominio propio)
+
+Acceso: una sola app de Marketplace (OAuth) da acceso a todas las subcuentas; no se crea una clave por clinica.
+
+
+3. Alta del agente de Retell
+----------------------------
+El script crea, con la info de la clinica:
+- Un Retell LLM con el prompt de la clinica (datos, horarios, servicios, FAQ, reglas) y las tools
+- El agente (voz, idioma, saludo, webhook de fin de llamada, analisis post-llamada) y se publica
+
+Que debe hacer el agente:
+- Responder dudas simples con la info de la clinica
+- Pedir nombre completo, telefono y correo del paciente (en web calls no se conoce el numero que llama)
+- Crear el cliente si no existe
+- Revisar disponibilidad en una fecha+hora y, si no hay, ofrecer los horarios libres mas cercanos
+- Agendar la cita
+- Ante una urgencia, seguir la regla de la clinica (derivar o tomar datos)
+
+Tools del agente (todas apuntan al middleware):
+- buscar_o_crear_cliente(nombre_completo, telefono, correo)
+- consultar_disponibilidad(fecha, hora)
+- agendar_cita(fecha, hora, contacto)
+- enviar_correo(contacto, asunto, mensaje)    (si se necesita durante la llamada)
+
+
+4. Middleware (Python, local)
+-----------------------------
+Expuesto a internet con ngrok, porque Retell tiene que poder llamarlo
+(usar el dominio fijo gratuito de ngrok para que la URL no cambie en cada reinicio).
+
+Registro de clinicas (JSON o SQLite), lo completa el alta:
+  locationId (ID de la clinica) -> agent_id y llm_id de Retell, calendar_id, pipeline_id, etapas
+Retell manda el agent_id en cada pedido; con eso el middleware sabe de que clinica es la llamada,
+y un solo middleware atiende a todas las clinicas.
+
+Retell -> Middleware -> GHL:
+- Endpoints de las tools del agente (contacto, disponibilidad, cita, correo)
+- Al agendar: crear la oportunidad en la etapa "Turno agendado" del embudo
+- Al terminar la llamada (webhook call_analyzed): guardar en el contacto de GHL
+  una nota con el resumen de la llamada y el call_id de Retell
+
+GHL -> Middleware -> Retell (ver la llamada dentro de GHL, sin duplicar datos):
+- La transcripcion y la grabacion NO se copian a GHL: quedan en Retell
+- El middleware sirve una pagina /llamadas que las busca en Retell en el momento
+- Esa pagina se ve DENTRO de GHL como un menu personalizado (Custom Menu Link en modo iframe) de la subcuenta,
+  filtrada por clinica; la nota del contacto tiene el link directo a su llamada
+  (a verificar: si el Custom Menu Link se puede crear por API o hay que agregarlo a mano)
+
+Seguridad:
+- Verificar la firma de Retell (x-retell-signature) en todos los pedidos que vienen de Retell
+- La pagina /llamadas exige un token: son datos de salud de pacientes
+- Tokens y claves solo en .env / archivos locales, nunca en el repositorio
+
+
+5. Fuera de alcance por ahora
+-----------------------------
+- Twilio y numeros de telefono (cuando se sume: comprar o importar el numero y asignarlo al agente)
+- Crear la subcuenta de GHL por API (requiere Agency Pro)
+- Dominio propio para los correos
+- Baja de clinicas

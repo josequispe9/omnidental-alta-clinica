@@ -1,0 +1,14 @@
+# Secretos y configuración local
+.env
+ghl-alta/.ghl_oauth.json
+
+# Datos de clínicas y pacientes (se generan al usar el sistema)
+clinicas.json
+registro.json
+llamadas.json
+*.log
+
+# Python
+.venv/
+__pycache__/
+*.pyc
