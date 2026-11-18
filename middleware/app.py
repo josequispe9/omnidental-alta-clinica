@@ -99,7 +99,23 @@ def t_buscar_o_crear_cliente(loc, a, call_id):
     return "Paciente registrado." if nuevo else "El paciente ya estaba registrado; se actualizaron sus datos."
 
 
+def fecha_pasada(loc, fecha):
+    """Si la fecha ya pasó en la zona horaria de la clínica, el texto para el agente; si no, None."""
+    hoy = datetime.now(ZoneInfo(ghl.clinica(loc)["timezone"])).date()
+    dia = datetime.strptime(fecha, "%Y-%m-%d").date()
+    if dia >= hoy:
+        return None
+    try:
+        sugerida = dia.replace(year=hoy.year + 1) if dia.year == hoy.year else None
+    except ValueError:  # 29 de febrero
+        sugerida = None
+    extra = f" Si el paciente se refiere al año que viene, consulta con la fecha {sugerida.isoformat()}." if sugerida else ""
+    return f"Esa fecha ya paso (hoy es {hoy.isoformat()}).{extra}"
+
+
 def t_consultar_disponibilidad(loc, a, call_id):
+    if aviso := fecha_pasada(loc, a["fecha"]):
+        return aviso
     r = ghl.consultar_disponibilidad(loc, a["fecha"], a.get("hora") or None)
     if r["disponible"] and r["pedido"]:
         return f"Hay turno libre el {en_palabras(r['pedido'])}."
@@ -113,6 +129,8 @@ def t_consultar_disponibilidad(loc, a, call_id):
 def t_agendar_cita(loc, a, call_id):
     contact_id, _ = ghl.buscar_o_crear_cliente(loc, a["nombre_completo"], a.get("telefono"), a.get("correo"))
     recordar_contacto(call_id, loc, contact_id)
+    if aviso := fecha_pasada(loc, a["fecha"]):
+        return f"No se agendo. {aviso}"
     r = ghl.consultar_disponibilidad(loc, a["fecha"], a["hora"])
     if not r["disponible"]:
         opciones = "; ".join(en_palabras(s) for s in r["alternativas"]) or "ninguno en los proximos 7 dias"
