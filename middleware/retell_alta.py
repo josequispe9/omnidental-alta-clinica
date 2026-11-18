@@ -197,7 +197,7 @@ def alta_retell(slug, location_id, dry_run=False):
 
     retell_ids = {"agent_id": agent_id, "llm_id": llm_id, "version_publicada": version, "token": token}
     datos.guardar_retell(location_id, retell_ids)
-    print(f"IDs guardados en {datos.RUTA}")
+    print("IDs guardados en la base (Supabase)")
     return retell_ids
 
 

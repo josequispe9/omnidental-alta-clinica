@@ -1,27 +1,37 @@
-"""Base de datos del proyecto (SQLite, omnidental.db): única puerta de acceso a los datos.
+"""Base de datos del proyecto (Postgres en Supabase, schema "omnidental"): única puerta de acceso a los datos.
 
 Tablas:
-  clinicas  una fila por clínica (o sede), de punta a punta: datos de la clínica (lo que era clinicas.json),
-            estado del panel, IDs de GHL y Retell y secretos (lo que era registro.json)
+  clinicas  una fila por clínica (o sede), de punta a punta: datos de la clínica, estado del panel,
+            IDs de GHL y Retell y secretos
   eventos   registro de actividad de cada clínica (panel)
   llamadas  call_id de Retell -> contacto de GHL (para la nota de fin de llamada)
   tokens    tokens OAuth de la app de Marketplace de GHL
+
+Conexión: SUPABASE_DB_URL en el .env (cadena de conexión del "Session pooler" de Supabase). El schema no está
+expuesto en la API pública de Supabase y tiene RLS sin políticas: solo se accede con esta conexión directa.
 
 Uso desde la terminal:
   .venv/bin/python datos.py listar
   .venv/bin/python datos.py exportar <slug> [archivo.json]     # para editar una clínica a mano
   .venv/bin/python datos.py importar <archivo.json>            # una clínica o una lista (formato clinicas.example.json)
-  .venv/bin/python datos.py migrar                             # trae clinicas.json, registro.json, llamadas.json y tokens
+  .venv/bin/python datos.py migrar-sqlite [omnidental.db]      # copia la base SQLite anterior a Supabase
 """
 import argparse
+import atexit
 import json
 import os
 import sqlite3
 import sys
+import threading
 import time
 
+import psycopg
+from psycopg.rows import dict_row
+from psycopg.types.json import Jsonb
+from psycopg_pool import ConnectionPool
+
 RAIZ = os.path.dirname(os.path.abspath(__file__))
-RUTA = os.getenv("OMNIDENTAL_DB", os.path.join(RAIZ, "omnidental.db"))
+T = "omnidental."  # schema
 
 # estados de una clínica
 EN_COLA_EXTRACCION, EXTRAYENDO, POR_REVISAR = "en_cola_extraccion", "extrayendo", "por_revisar"
@@ -29,120 +39,138 @@ EN_COLA_ALTA, EN_ALTA, LISTA = "en_cola_alta", "en_alta", "lista"
 ERROR_EXTRACCION, ERROR_ALTA, DESCARTADA = "error_extraccion", "error_alta", "descartada"
 
 JSON_COLS = ("datos", "revision", "fuentes", "extra", "resultado", "ghl", "retell")
+COLUMNAS = ("slug", "nombre", "url", "origen_id", "estado", "etapa", "paso", "avance", "mensaje", "error", "captura",
+            *JSON_COLS, "location_id", "vista_token", "encolada", "creada", "actualizada")
 
-ESQUEMA = """
-CREATE TABLE IF NOT EXISTS clinicas (
-  id INTEGER PRIMARY KEY AUTOINCREMENT,
-  slug TEXT, nombre TEXT, url TEXT, origen_id INTEGER,
-  estado TEXT NOT NULL, etapa TEXT, paso TEXT, avance REAL DEFAULT 0, mensaje TEXT, error TEXT, captura TEXT,
-  datos TEXT,                         -- la clínica (formato clinicas.example.json)
-  revision TEXT, fuentes TEXT, extra TEXT, resultado TEXT,   -- extracción y panel
-  location_id TEXT, ghl TEXT, retell TEXT, vista_token TEXT, -- alta (antes registro.json)
-  encolada REAL, creada REAL, actualizada REAL
-);
-CREATE INDEX IF NOT EXISTS clinicas_slug ON clinicas(slug);
-CREATE INDEX IF NOT EXISTS clinicas_location ON clinicas(location_id);
-CREATE TABLE IF NOT EXISTS eventos (
-  id INTEGER PRIMARY KEY AUTOINCREMENT, clinica_id INTEGER NOT NULL,
-  ts REAL, etapa TEXT, paso TEXT, nivel TEXT, mensaje TEXT
-);
-CREATE INDEX IF NOT EXISTS eventos_clinica ON eventos(clinica_id, id);
-CREATE TABLE IF NOT EXISTS llamadas (
-  call_id TEXT PRIMARY KEY, location_id TEXT, contact_id TEXT, creada REAL
-);
-CREATE TABLE IF NOT EXISTS tokens (
-  clave TEXT PRIMARY KEY, valor TEXT, actualizado REAL
-);
-"""
+_pool = None
+_lock = threading.Lock()
 
-_iniciada = False
+# Cache corta para lo que el middleware consulta en cada llamada y solo cambia con un alta
+# (agente -> subcuenta, datos de la subcuenta). Los tokens de GHL no se cachean: GHL los rota.
+CACHE_SEG = 30
+_cache = {}
 
 
-def conectar():
-    """Conexión nueva (una por operación: la usan a la vez el middleware, el panel y los scripts)."""
-    global _iniciada
-    nueva = not os.path.exists(RUTA)
-    c = sqlite3.connect(RUTA, timeout=30)
-    c.row_factory = sqlite3.Row
-    c.execute("PRAGMA busy_timeout = 30000")
-    if not _iniciada:
-        c.execute("PRAGMA journal_mode = WAL")  # lectores y un escritor a la vez sin bloquearse
-        c.executescript(ESQUEMA)
-        _iniciada = True
-        if nueva:
-            os.chmod(RUTA, 0o600)  # tiene secretos (tokens de GHL, secretos de cada agente)
-    return c
+def _cacheado(clave, funcion):
+    hit = _cache.get(clave)
+    if hit and time.time() - hit[0] < CACHE_SEG:
+        return hit[1]
+    valor = funcion()
+    _cache[clave] = (time.time(), valor)
+    return valor
 
 
-def _fila(r):
-    if r is None:
-        return None
-    d = dict(r)
-    for k in JSON_COLS:
-        if k in d:
-            d[k] = json.loads(d[k]) if d[k] else None
-    return d
+def _url():
+    if not os.getenv("SUPABASE_DB_URL"):
+        ruta = os.path.join(RAIZ, ".env")  # mismo formato que ghl_oauth.cargar_env (sin importarlo: evita ciclos)
+        if os.path.exists(ruta):
+            with open(ruta) as f:
+                for linea in f:
+                    linea = linea.strip()
+                    if linea and not linea.startswith("#") and "=" in linea:
+                        k, v = linea.split("=", 1)
+                        os.environ.setdefault(k.strip(), v.strip().strip('"').strip("'"))
+    url = os.getenv("SUPABASE_DB_URL")
+    if not url:
+        sys.exit("Falta SUPABASE_DB_URL en el .env (Supabase > Connect > Session pooler)")
+    return url
+
+
+def _conexion():
+    """Conexión del pool del proceso (la usan a la vez el middleware, el panel y los scripts)."""
+    global _pool
+    if _pool is None:
+        with _lock:
+            if _pool is None:
+                url = _url()
+                try:  # una prueba directa primero: si la contraseña o el host están mal, falla rápido y claro
+                    psycopg.connect(url, connect_timeout=15).close()
+                except psycopg.OperationalError as e:
+                    motivo = str(e).strip().splitlines()[-1]
+                    sys.exit(f"No pude conectarme a Supabase (SUPABASE_DB_URL): {motivo}")
+                # sin "check" por conexión: agrega una ida y vuelta a cada consulta. Las conexiones rotas se
+                # descartan al devolverlas y max_idle/max_lifetime renuevan las viejas.
+                _pool = ConnectionPool(url, min_size=1, max_size=4, open=True, timeout=30,
+                                       max_idle=240, max_lifetime=1800,
+                                       kwargs={"autocommit": True, "row_factory": dict_row,
+                                               "prepare_threshold": None, "connect_timeout": 15})
+                atexit.register(_pool.close)
+    return _pool.connection()
+
+
+def _todas(sql, params=()):
+    with _conexion() as c:
+        return c.execute(sql, params).fetchall()
+
+
+def _una(sql, params=()):
+    with _conexion() as c:
+        return c.execute(sql, params).fetchone()
+
+
+def _ejecutar(sql, params=()):
+    with _conexion() as c:
+        c.execute(sql, params)
 
 
 def _json(campos):
-    for k in JSON_COLS:
-        if k in campos and campos[k] is not None and not isinstance(campos[k], str):
-            campos[k] = json.dumps(campos[k], ensure_ascii=False)
-    return campos
+    return {k: (Jsonb(v) if k in JSON_COLS and v is not None and not isinstance(v, Jsonb) else v)
+            for k, v in campos.items()}
+
+
+def _validar_columnas(campos):
+    malas = set(campos) - set(COLUMNAS)
+    if malas:
+        raise ValueError(f"Columnas desconocidas: {sorted(malas)}")
 
 
 # ---------- clínicas (filas completas) ----------
 
 def fila(cid):
-    with conectar() as c:
-        return _fila(c.execute("SELECT * FROM clinicas WHERE id=?", (cid,)).fetchone())
+    return _una(f"SELECT * FROM {T}clinicas WHERE id=%s", (cid,))
 
 
 def fila_por_slug(slug):
-    """La clínica activa con ese slug (no descartada); si hubiera varias, la más avanzada y reciente."""
-    with conectar() as c:
-        r = c.execute("""SELECT * FROM clinicas WHERE slug=? AND estado != ?
-                         ORDER BY (location_id IS NOT NULL) DESC, id DESC LIMIT 1""", (slug, DESCARTADA)).fetchone()
-    return _fila(r)
+    """La clínica activa con ese slug (no descartada)."""
+    return _una(f"""SELECT * FROM {T}clinicas WHERE slug=%s AND estado <> %s
+                    ORDER BY (location_id IS NOT NULL) DESC, id DESC LIMIT 1""", (slug, DESCARTADA))
 
 
 def fila_por_location(location_id):
-    with conectar() as c:
-        r = c.execute("SELECT * FROM clinicas WHERE location_id=? AND estado != ? ORDER BY id DESC LIMIT 1",
-                      (location_id, DESCARTADA)).fetchone()
-    return _fila(r)
+    return _una(f"SELECT * FROM {T}clinicas WHERE location_id=%s AND estado <> %s ORDER BY id DESC LIMIT 1",
+                (location_id, DESCARTADA))
 
 
 def filas(incluir_descartadas=False):
-    with conectar() as c:
-        rs = c.execute("SELECT * FROM clinicas" + ("" if incluir_descartadas else " WHERE estado != ?") +
-                       " ORDER BY COALESCE(origen_id, id), id", () if incluir_descartadas else (DESCARTADA,)).fetchall()
-    return [_fila(r) for r in rs]
+    donde = "" if incluir_descartadas else "WHERE estado <> %s"
+    return _todas(f"SELECT * FROM {T}clinicas {donde} ORDER BY COALESCE(origen_id, id), id",
+                  () if incluir_descartadas else (DESCARTADA,))
 
 
 def crear_fila(**campos):
     ahora = time.time()
-    campos = _json({"creada": ahora, "actualizada": ahora, **campos})
-    with conectar() as c:
-        cur = c.execute(f"INSERT INTO clinicas({', '.join(campos)}) VALUES ({', '.join('?' * len(campos))})",
-                        tuple(campos.values()))
-        return cur.lastrowid
+    campos = {"creada": ahora, "actualizada": ahora, **campos}
+    _validar_columnas(campos)
+    campos = _json(campos)
+    r = _una(f"INSERT INTO {T}clinicas ({', '.join(campos)}) VALUES ({', '.join(['%s'] * len(campos))}) RETURNING id",
+             tuple(campos.values()))
+    return r["id"]
 
 
 def actualizar(cid, **campos):
     if not campos:
         return
-    campos = _json({**campos, "actualizada": time.time()})
-    with conectar() as c:
-        c.execute(f"UPDATE clinicas SET {', '.join(f'{k}=?' for k in campos)} WHERE id=?", (*campos.values(), cid))
+    _cache.clear()
+    campos = {**campos, "actualizada": time.time()}
+    _validar_columnas(campos)
+    campos = _json(campos)
+    _ejecutar(f"UPDATE {T}clinicas SET {', '.join(f'{k}=%s' for k in campos)} WHERE id=%s", (*campos.values(), cid))
 
 
 def slug_libre(slug, excepto=None):
     """True si ninguna otra clínica activa usa ese slug."""
-    with conectar() as c:
-        r = c.execute("SELECT id FROM clinicas WHERE slug=? AND estado != ? AND id != ?",
-                      (slug, DESCARTADA, excepto or -1)).fetchone()
-    return r is None
+    return _una(f"SELECT 1 FROM {T}clinicas WHERE slug=%s AND estado <> %s AND id <> %s",
+                (slug, DESCARTADA, excepto or -1)) is None
 
 
 def slug_disponible(base):
@@ -151,6 +179,19 @@ def slug_disponible(base):
     while not slug_libre(slug):
         slug, i = f"{base[:36]}-{i}", i + 1
     return slug
+
+
+def tomar_siguiente(en_cola, corriendo):
+    """Toma la fila más antigua de una cola y la marca como corriendo, en una sola operación atómica."""
+    r = _una(f"""UPDATE {T}clinicas SET estado=%s, error=NULL, captura=NULL, avance=0, actualizada=%s
+                 WHERE id = (SELECT id FROM {T}clinicas WHERE estado=%s ORDER BY encolada, id
+                             LIMIT 1 FOR UPDATE SKIP LOCKED)
+                 RETURNING id""", (corriendo, time.time(), en_cola))
+    return r["id"] if r else None
+
+
+def cantidad(estado):
+    return _una(f"SELECT COUNT(*) AS n FROM {T}clinicas WHERE estado=%s", (estado,))["n"]
 
 
 # ---------- lo que usan los scripts del alta y el middleware ----------
@@ -172,7 +213,11 @@ def guardar_clinica(datos, estado=POR_REVISAR):
 
 
 def registro(location_id):
-    """Lo que antes era la entrada de registro.json: {slug, clinica, timezone, vista_token, ghl, retell} o None."""
+    """{slug, clinica, timezone, vista_token, ghl, retell} de la clínica de esa subcuenta, o None."""
+    return _cacheado(("registro", location_id), lambda: _registro(location_id))
+
+
+def _registro(location_id):
     f = fila_por_location(location_id)
     if not f:
         return None
@@ -203,88 +248,88 @@ def guardar_retell(location_id, retell):
 
 
 def location_por_agente(agent_id):
-    with conectar() as c:
-        r = c.execute("""SELECT location_id FROM clinicas WHERE estado != ? AND location_id IS NOT NULL
-                         AND json_extract(retell, '$.agent_id') = ?""", (DESCARTADA, agent_id)).fetchone()
+    return _cacheado(("agente", agent_id), lambda: _location_por_agente(agent_id))
+
+
+def _location_por_agente(agent_id):
+    r = _una(f"""SELECT location_id FROM {T}clinicas WHERE estado <> %s AND location_id IS NOT NULL
+                 AND retell->>'agent_id' = %s""", (DESCARTADA, agent_id))
     return r["location_id"] if r else None
 
 
 def recordar_llamada(call_id, location_id, contact_id, forzar=False):
     """Contacto al que va la nota de la llamada: el primero registrado, o el que agendó un turno (forzar)."""
-    with conectar() as c:
-        c.execute(("INSERT OR REPLACE" if forzar else "INSERT OR IGNORE") +
-                  " INTO llamadas(call_id, location_id, contact_id, creada) VALUES (?,?,?,?)",
-                  (call_id, location_id, contact_id, time.time()))
+    accion = ("DO UPDATE SET location_id=EXCLUDED.location_id, contact_id=EXCLUDED.contact_id, creada=EXCLUDED.creada"
+              if forzar else "DO NOTHING")
+    _ejecutar(f"INSERT INTO {T}llamadas (call_id, location_id, contact_id, creada) VALUES (%s,%s,%s,%s) "
+              f"ON CONFLICT (call_id) {accion}", (call_id, location_id, contact_id, time.time()))
 
 
 def llamada(call_id):
-    with conectar() as c:
-        r = c.execute("SELECT * FROM llamadas WHERE call_id=?", (call_id,)).fetchone()
-    return dict(r) if r else None
+    return _una(f"SELECT * FROM {T}llamadas WHERE call_id=%s", (call_id,))
 
 
 def leer_token(clave):
-    with conectar() as c:
-        r = c.execute("SELECT valor FROM tokens WHERE clave=?", (clave,)).fetchone()
-    return json.loads(r["valor"]) if r else None
+    r = _una(f"SELECT valor FROM {T}tokens WHERE clave=%s", (clave,))
+    return r["valor"] if r else None
 
 
 def guardar_token(clave, valor):
-    with conectar() as c:
-        c.execute("INSERT OR REPLACE INTO tokens(clave, valor, actualizado) VALUES (?,?,?)",
-                  (clave, json.dumps(valor), time.time()))
+    _ejecutar(f"""INSERT INTO {T}tokens (clave, valor, actualizado) VALUES (%s,%s,%s)
+                  ON CONFLICT (clave) DO UPDATE SET valor=EXCLUDED.valor, actualizado=EXCLUDED.actualizado""",
+              (clave, Jsonb(valor), time.time()))
 
 
 # ---------- eventos (panel) ----------
 
 def agregar_evento(cid, etapa, paso, nivel, mensaje, ts=None):
-    with conectar() as c:
-        c.execute("INSERT INTO eventos(clinica_id, ts, etapa, paso, nivel, mensaje) VALUES (?,?,?,?,?,?)",
-                  (cid, ts or time.time(), etapa, paso, nivel, mensaje))
+    _ejecutar(f"INSERT INTO {T}eventos (clinica_id, ts, etapa, paso, nivel, mensaje) VALUES (%s,%s,%s,%s,%s,%s)",
+              (cid, ts or time.time(), etapa, paso, nivel, mensaje))
 
 
 def eventos(cid, desde=0):
     """Eventos de la clínica y, si es una sede agregada, también los de la extracción de la fila original."""
     f = fila(cid)
     ids = [cid] + ([f["origen_id"]] if f and f["origen_id"] else [])
-    with conectar() as c:
-        rs = c.execute(f"SELECT * FROM eventos WHERE clinica_id IN ({','.join('?' * len(ids))}) AND id > ? ORDER BY id",
-                       (*ids, desde)).fetchall()
-    return [dict(r) for r in rs]
+    return _todas(f"SELECT * FROM {T}eventos WHERE clinica_id = ANY(%s) AND id > %s ORDER BY id", (ids, desde))
 
 
-# ---------- migración desde los archivos sueltos ----------
+# ---------- migración desde la base SQLite anterior ----------
 
-def _leer_json(ruta, defecto):
+def migrar_sqlite(ruta):
+    """Copia clinicas, eventos, llamadas y tokens de omnidental.db (SQLite) conservando los ids."""
     if not os.path.exists(ruta):
-        return defecto
+        sys.exit(f"No existe {ruta}")
+    s = sqlite3.connect(ruta)
+    s.row_factory = sqlite3.Row
+    if _una(f"SELECT COUNT(*) AS n FROM {T}clinicas")["n"]:
+        sys.exit("La base de Supabase ya tiene clínicas: no se migra encima")
+    with _conexion() as c, c.transaction():
+        for r in s.execute("SELECT * FROM clinicas ORDER BY id"):
+            d = {k: (json.loads(r[k]) if k in JSON_COLS and r[k] else r[k]) for k in r.keys()}
+            d = _json(d)
+            c.execute(f"INSERT INTO {T}clinicas ({', '.join(d)}) OVERRIDING SYSTEM VALUE VALUES ({', '.join(['%s'] * len(d))})",
+                      tuple(d.values()))
+        n_ev = 0
+        for r in s.execute("SELECT * FROM eventos ORDER BY id"):
+            c.execute(f"INSERT INTO {T}eventos (id, clinica_id, ts, etapa, paso, nivel, mensaje) OVERRIDING SYSTEM VALUE "
+                      "VALUES (%s,%s,%s,%s,%s,%s,%s)", tuple(r))
+            n_ev += 1
+        for r in s.execute("SELECT * FROM llamadas"):
+            c.execute(f"INSERT INTO {T}llamadas VALUES (%s,%s,%s,%s)", tuple(r))
+        for r in s.execute("SELECT * FROM tokens"):
+            c.execute(f"INSERT INTO {T}tokens VALUES (%s,%s,%s)", (r["clave"], Jsonb(json.loads(r["valor"])), r["actualizado"]))
+        for tabla in ("clinicas", "eventos"):  # que los ids nuevos sigan después de los migrados
+            c.execute(f"SELECT setval(pg_get_serial_sequence('{T}{tabla}', 'id'), "
+                      f"COALESCE((SELECT MAX(id) FROM {T}{tabla}), 0) + 1, false)")
+    print(f"Migrado: {s.execute('SELECT COUNT(*) FROM clinicas').fetchone()[0]} clínicas, {n_ev} eventos, "
+          f"{s.execute('SELECT COUNT(*) FROM llamadas').fetchone()[0]} llamadas, "
+          f"{s.execute('SELECT COUNT(*) FROM tokens').fetchone()[0]} tokens")
+
+
+def _leer_json(ruta):
     with open(ruta) as f:
         return json.load(f)
-
-
-def migrar():
-    clinicas_json = _leer_json(os.path.join(RAIZ, "clinicas.json"), [])
-    reg = _leer_json(os.path.join(RAIZ, "registro.json"), {})
-    por_slug = {v.get("slug"): (loc, v) for loc, v in reg.items()}
-    for c in clinicas_json:
-        cid = guardar_clinica(c, estado=POR_REVISAR)
-        if c["slug"] in por_slug:
-            loc, v = por_slug[c["slug"]]
-            actualizar(cid, location_id=loc, ghl=v.get("ghl"), retell=v.get("retell"), vista_token=v.get("vista_token"),
-                       estado=LISTA, etapa="fin", paso="ok", avance=100, mensaje="Dada de alta (migrada de registro.json)",
-                       resultado={"location_id": loc, **{k: (v.get("retell") or {}).get(k) for k in ("agent_id",)},
-                                  "vista_token": v.get("vista_token")})
-        print(f"  clínica {c['slug']}" + (f" -> {por_slug[c['slug']][0]}" if c["slug"] in por_slug else " (sin alta)"))
-    sin_datos = [v.get("slug") for v in reg.values() if v.get("slug") not in {c["slug"] for c in clinicas_json}]
-    if sin_datos:
-        print(f"  aviso: en registro.json pero no en clinicas.json (no se migran): {sin_datos}")
-    for call_id, v in _leer_json(os.path.join(RAIZ, "llamadas.json"), {}).items():
-        recordar_llamada(call_id, v.get("location_id"), v.get("contact_id"), forzar=True)
-    tokens = _leer_json(os.path.join(RAIZ, "ghl-alta", ".ghl_oauth.json"), None)
-    if tokens:
-        guardar_token("ghl_oauth", tokens)
-        print("  tokens OAuth de GHL")
-    print(f"Listo: {RUTA}")
 
 
 def main():
@@ -296,7 +341,8 @@ def main():
     e.add_argument("archivo", nargs="?")
     i = sub.add_parser("importar")
     i.add_argument("archivo")
-    sub.add_parser("migrar")
+    m = sub.add_parser("migrar-sqlite")
+    m.add_argument("ruta", nargs="?", default=os.path.join(RAIZ, "omnidental.db"))
     a = ap.parse_args()
 
     if a.cmd == "listar":
@@ -314,13 +360,13 @@ def main():
         else:
             print(texto, end="")
     elif a.cmd == "importar":
-        contenido = _leer_json(a.archivo, None)
+        contenido = _leer_json(a.archivo)
         for c in contenido if isinstance(contenido, list) else [contenido]:
             if not c.get("slug"):
                 sys.exit("Cada clínica necesita un slug")
             print(f"  {c['slug']}: id {guardar_clinica(c)}")
-    elif a.cmd == "migrar":
-        migrar()
+    elif a.cmd == "migrar-sqlite":
+        migrar_sqlite(a.ruta)
 
 
 if __name__ == "__main__":

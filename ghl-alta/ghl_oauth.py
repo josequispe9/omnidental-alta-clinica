@@ -10,7 +10,7 @@ Desde otro script:
   token = token_subcuenta("<locationId>")
 
 Lee GHL_CLIENT_ID y GHL_CLIENT_SECRET del .env de la carpeta principal (o de variables de entorno).
-Guarda los tokens en la base del proyecto (omnidental.db, tabla tokens).
+Guarda los tokens en la base del proyecto (Supabase, tabla omnidental.tokens).
 """
 import os
 import sys
@@ -128,7 +128,7 @@ def instalar():
     print("\nInstalación OK.")
     print(f"  userType: {t.get('userType')}  companyId: {t.get('companyId')}")
     print(f"  scopes concedidos: {t.get('scope')}")
-    print(f"  tokens guardados en {datos_db.RUTA}")
+    print("  tokens guardados en la base (Supabase)")
 
 
 # ---------- tokens ----------
@@ -144,11 +144,18 @@ def token_agencia():
     return t
 
 
+_en_memoria = {}  # location_id -> token: el access token no se rota, se puede reusar en el proceso hasta que vence
+
+
 def token_subcuenta(location_id):
     """Devuelve un access token válido para esa subcuenta, pidiéndolo o renovándolo si hace falta."""
+    t = _en_memoria.get(location_id)
+    if t and time.time() < t["expira_en"]:
+        return t["access_token"]
     datos = leer()
     t = datos["subcuentas"].get(location_id)
     if t and time.time() < t["expira_en"]:
+        _en_memoria[location_id] = t
         return t["access_token"]
     if t and t.get("refresh_token"):
         try:
@@ -160,6 +167,7 @@ def token_subcuenta(location_id):
     datos = leer()
     datos["subcuentas"][location_id] = t
     guardar(datos)
+    _en_memoria[location_id] = t
     return t["access_token"]
 
 

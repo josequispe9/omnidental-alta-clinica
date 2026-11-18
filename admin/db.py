@@ -1,4 +1,4 @@
-"""Operaciones del panel sobre la base del proyecto (datos.py, omnidental.db).
+"""Operaciones del panel sobre la base del proyecto (datos.py, Postgres en Supabase).
 
 Cada clínica es una fila de la tabla clinicas, de punta a punta. Una web se encola como una fila; al terminar
 la extracción, si la web tiene varias sedes, la primera queda en esa fila y las demás se agregan como filas nuevas
@@ -35,21 +35,8 @@ def listar():
     return datos.filas()
 
 
-def tomar_siguiente(en_cola, corriendo):
-    """Toma la fila más antigua de la cola y la marca como corriendo (de a una por cola)."""
-    with datos.conectar() as c:
-        c.execute("BEGIN IMMEDIATE")
-        f = c.execute("SELECT id FROM clinicas WHERE estado=? ORDER BY encolada, id LIMIT 1", (en_cola,)).fetchone()
-        if not f:
-            return None
-        c.execute("UPDATE clinicas SET estado=?, error=NULL, captura=NULL, avance=0, actualizada=? WHERE id=?",
-                  (corriendo, time.time(), f["id"]))
-        return f["id"]
-
-
-def cantidad(estado):
-    with datos.conectar() as c:
-        return c.execute("SELECT COUNT(*) FROM clinicas WHERE estado=?", (estado,)).fetchone()[0]
+tomar_siguiente = datos.tomar_siguiente
+cantidad = datos.cantidad
 
 
 def crear_sede(origen, url, **campos):

@@ -447,7 +447,7 @@ def main():
         print("\nDry-run terminado. No se envió nada a GHL.")
         return
     guardar_registro(cfg, estado)
-    print(f"\nAlta en GHL lista. IDs guardados en {datos.RUTA}")
+    print("\nAlta en GHL lista. IDs guardados en la base (Supabase)")
     print(json.dumps(estado, indent=2, ensure_ascii=False))
 
 

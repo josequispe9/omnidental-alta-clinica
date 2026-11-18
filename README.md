@@ -17,7 +17,7 @@ Los documentos de diseño están en [`docs/`](docs/): las instrucciones original
 ## Estructura
 
 ```
-datos.py                 # base de datos (SQLite, omnidental.db): única puerta a los datos; listar/exportar/importar
+datos.py                 # base de datos (Postgres en Supabase): única puerta a los datos; listar/exportar/importar
 admin/                   # panel de administración: colas de extracción y alta, revisión y avance
 progreso.py              # eventos de avance de los scripts (texto en terminal, JSON para el panel)
 extraer_web.py           # arma el borrador de una clínica leyendo su web (Playwright + Claude)
@@ -38,7 +38,7 @@ middleware/
 
 ## Datos
 
-Todo vive en una base SQLite, `omnidental.db`, y se accede solo por `datos.py`:
+Todo vive en Postgres, en el proyecto de Supabase `omnidental-demo` (us-east-1), schema `omnidental`. Se accede solo por `datos.py`, con la conexión `SUPABASE_DB_URL` del `.env`:
 
 | Tabla | Qué guarda |
 |---|---|
@@ -53,9 +53,19 @@ Todo vive en una base SQLite, `omnidental.db`, y se accede solo por `datos.py`:
 .venv/bin/python datos.py importar clinica.json           # ...y volver a cargarla (o una lista de clínicas)
 ```
 
-La base usa el modo WAL, así que el middleware, el panel y los scripts pueden usarla a la vez. Tiene secretos: su permiso es 600 y no se sube al repo. Si en algún momento el middleware pasa a la nube, se cambia solo `datos.py`, por ejemplo a Postgres.
+**Conexión:** `SUPABASE_DB_URL` es la cadena del **Session pooler**, que está en Supabase → Connect. La conexión directa de Supabase solo funciona por IPv6.
 
-Archivos locales que **no** se suben: `.env`, `omnidental.db`, `borradores/` y los logs. Los JSON que se usaban antes (`clinicas.json`, `registro.json`, `llamadas.json` y `.ghl_oauth.json`) se importan con `datos.py migrar`.
+**Seguridad:** la base guarda secretos. Por eso el schema `omnidental` no está expuesto en la API pública de Supabase y tiene RLS sin políticas: los roles `anon` y `authenticated` no tienen acceso, y solo se lee con la conexión directa. La estructura está en la migración `esquema_omnidental`, aplicada en Supabase.
+
+**Rendimiento:**
+- Cada proceso reutiliza sus conexiones.
+- La cola toma la siguiente clínica en una sola operación atómica (`FOR UPDATE SKIP LOCKED`), así dos procesos no agarran la misma.
+- El middleware guarda en memoria por 30 s la relación agente → subcuenta y los datos de cada subcuenta, que solo cambian con un alta.
+- Los access token de cada subcuenta se guardan en memoria hasta que vencen. Los refresh tokens siempre se leen de la base, porque GHL los rota.
+
+Mientras el middleware corra en tu máquina, cada consulta a la base tarda unos 0,4 s. Una herramienta del agente tarda unos 4 s la primera vez y alrededor de 1 s las siguientes. En la nube, en la misma región que la base, la latencia de la base baja a milisegundos.
+
+Archivos locales que **no** se suben: `.env`, `borradores/` y los logs. La base SQLite anterior se copia a Supabase con `datos.py migrar-sqlite <archivo>`.
 
 ## Configuración (una sola vez)
 
@@ -109,7 +119,7 @@ brave-browser --remote-debugging-port=9222          # con la sesión de GHL inic
 
 **Seguridad:** el panel escucha solo en `127.0.0.1`. **No lo publiques con ngrok**: crea subcuentas y gasta créditos.
 
-El estado se guarda en la misma base, `omnidental.db`. Las clínicas cargadas desde la terminal también aparecen en el panel. Si el panel se reinicia mientras algo corre, esa clínica queda con error ("interrumpida") y se reintenta desde la lista.
+El estado se guarda en la misma base de Supabase. Las clínicas cargadas desde la terminal también aparecen en el panel. Si el panel se reinicia mientras algo corre, esa clínica queda con error ("interrumpida") y se reintenta desde la lista.
 
 Los scripts emiten eventos con `progreso.py`. En la terminal muestran el mismo texto de siempre; con `ALTA_EVENTOS=json`, que es como los corre el panel, emiten líneas JSON.
 

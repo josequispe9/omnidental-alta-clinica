@@ -4,3 +4,5 @@ requests==2.34.2
 playwright==1.65.2
 anthropic==2.10.0
 pydantic==2.14.3
+psycopg[binary,pool]==3.3.9
+psycopg-pool==3.3.3
