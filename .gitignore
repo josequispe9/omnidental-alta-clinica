@@ -17,3 +17,7 @@ ghl_crear_subcuenta_acciones.txt
 
 # Borradores de extraer_web.py (datos de webs de terceros)
 borradores/
+
+# Panel de administración
+admin.db
+clinicas.json.tmp

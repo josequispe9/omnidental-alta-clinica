@@ -32,6 +32,7 @@ from pydantic import BaseModel, Field
 RAIZ = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, os.path.join(RAIZ, "ghl-alta"))
 import ghl_oauth  # noqa: E402  (solo para leer el .env)
+from progreso import evento, resultado  # noqa: E402
 
 SALIDA = os.path.join(RAIZ, "borradores")
 MODELO = "claude-opus-5-5"
@@ -120,6 +121,8 @@ class Descargador:
                 ultimo = (self.pagina.url, self.pagina.content())
             except PWError:
                 continue
+            if ultimo[0].startswith(("chrome-error:", "about:")):
+                return None  # la página no cargó (dominio inexistente, sin conexión...)
             if not es_desafio(200, ultimo[1]) and not re.search(r"captcha|challenge|/\.well-known/", ultimo[0], re.I):
                 return ultimo
         return ultimo
@@ -221,7 +224,8 @@ def recorrer(inicio, max_paginas=25):
             base = primera[0]
             dom = dominio(base)
             prefijo_idioma = (re.match(r"^/([a-z]{2})(/|$)", urlparse(base).path) or [None, None])[1]
-            print(f"Sitio: {dom} (modo {desc.modo})")
+            evento("extraccion", "sitio", f"Sitio: {dom} (descarga {'con navegador' if desc.modo == 'navegador' else 'directa'})",
+                   texto=f"Sitio: {dom} (modo {desc.modo})")
 
             candidatos = {}  # url normalizada -> (puntaje, url original)
 
@@ -237,8 +241,8 @@ def recorrer(inicio, max_paginas=25):
                     candidatos[n] = (s, u)
 
             sitemap = leer_sitemaps(desc, base)
-            print(f"Mapa del sitio: {len(sitemap)} URLs "
-                  f"({sum(t == 'util' for t in sitemap.values())} páginas, {sum(t == 'post' for t in sitemap.values())} de blog)")
+            evento("extraccion", "sitemap", f"Mapa del sitio: {len(sitemap)} URLs "
+                   f"({sum(t == 'util' for t in sitemap.values())} páginas, {sum(t == 'post' for t in sitemap.values())} de blog)")
             for u, tipo in sitemap.items():
                 agregar(u, origen=tipo)
 
@@ -293,7 +297,8 @@ def recorrer(inicio, max_paginas=25):
                         pass
                 res["paginas"].append({"url": url_final, "titulo": d["titulo"], "lineas": d["lineas"]})
                 texto_total += sum(len(l) for l in d["lineas"])
-                print(f"  {len(res['paginas']):2d}. {url_final}")
+                evento("extraccion", "pagina", f"Página {len(res['paginas'])} de {max_paginas}: {url_final}",
+                       i=len(res["paginas"]), n=max_paginas, texto=f"  {len(res['paginas']):2d}. {url_final}")
                 if texto_total > MAX_TEXTO_TOTAL:
                     print("  (tope de texto alcanzado)")
                     break
@@ -476,7 +481,8 @@ def armar_ficha(rec, seguros):
     contenido = (f"Web: {rec['inicio']}\n\n## Datos extraídos automáticamente\n"
                  f"{json.dumps(seguros, ensure_ascii=False, indent=1)}\n\n## Texto de las páginas\n\n"
                  f"{texto_para_modelo(rec)}")
-    print(f"Consultando a Claude ({MODELO}, ~{len(contenido) // 4000}k tokens de entrada)...", flush=True)
+    evento("extraccion", "claude", f"Claude arma la ficha ({MODELO}, ~{len(contenido) // 4000}k tokens de entrada)",
+           texto=f"Consultando a Claude ({MODELO}, ~{len(contenido) // 4000}k tokens de entrada)...")
     # con streaming: el SDK no deja hacer pedidos largos sin stream (riesgo de timeout HTTP)
     with client.beta.messages.stream(
         model=MODELO,
@@ -495,7 +501,8 @@ def armar_ficha(rec, seguros):
     if r.stop_reason == "max_tokens" or ficha is None:
         sys.exit(f"Respuesta incompleta de Claude (stop_reason={r.stop_reason}).")
     u = r.usage
-    print(f"  tokens: entrada {u.input_tokens}, salida {u.output_tokens}")
+    evento("extraccion", "claude", f"Tokens: entrada {u.input_tokens}, salida {u.output_tokens}",
+           texto=f"  tokens: entrada {u.input_tokens}, salida {u.output_tokens}")
     return ficha
 
 
@@ -619,17 +626,22 @@ def main():
     ap.add_argument("url", help="web de la clínica")
     ap.add_argument("--paginas", type=int, default=25, help="máximo de páginas a leer (por defecto 25)")
     ap.add_argument("--solo-recorrer", action="store_true", help="recorre y guarda el texto, sin consultar a Claude")
+    ap.add_argument("--salida", help="ruta del borrador sin extensión (por defecto borradores/<dominio>)")
     args = ap.parse_args()
 
     ghl_oauth.cargar_env(() if args.solo_recorrer else ("ANTHROPIC_API_KEY",))
     os.makedirs(SALIDA, exist_ok=True)
 
     rec = recorrer(args.url, args.paginas)
+    if sum(len(l) for p in rec["paginas"] for l in p["lineas"]) < 300:
+        sys.exit(f"No se pudo leer la web {rec['inicio']}: no cargó o no tiene texto (¿la dirección es correcta?)")
     seguros = datos_seguros(rec)
-    base = os.path.join(SALIDA, dominio(rec["inicio"]))
+    base = args.salida or os.path.join(SALIDA, dominio(rec["inicio"]))
+    os.makedirs(os.path.dirname(os.path.abspath(base)), exist_ok=True)
     with open(base + ".recorrido.json", "w") as fh:
         json.dump({**rec, "datos_seguros": seguros}, fh, ensure_ascii=False, indent=1)
-    print(f"Recorrido guardado: {base}.recorrido.json")
+    evento("extraccion", "recorrido", f"Recorrido guardado: {len(rec['paginas'])} páginas",
+           texto=f"Recorrido guardado: {base}.recorrido.json")
     if args.solo_recorrer:
         return
 
@@ -672,7 +684,8 @@ def main():
             print(f"{titulo}:")
             for i in items:
                 print(f"  - {i}")
-    print(f"\nBorrador: {base}.json")
+    evento("extraccion", "borrador", f"Borrador listo: {len(clinicas)} sede(s)", texto=f"\nBorrador: {base}.json")
+    resultado(borrador=os.path.abspath(base + ".json"))
     print("Revisalo, completá lo marcado como COMPLETAR y copiá las entradas de \"clinicas\" a clinicas.json.")
 
 

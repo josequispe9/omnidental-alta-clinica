@@ -39,6 +39,9 @@ import requests
 
 import ghl_oauth
 
+sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), ".."))
+from progreso import evento  # noqa: E402
+
 BASE = "https://services.leadconnectorhq.com"
 
 
@@ -94,7 +97,7 @@ class GHL:
 
 
 def paso(n, texto):
-    print(f"[{n}] {texto}")
+    evento("ghl", n, texto, texto=f"[{n}] {texto}")
 
 
 # ---------- pasos ----------

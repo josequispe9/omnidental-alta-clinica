@@ -17,6 +17,8 @@ Los documentos de diseño están en [`docs/`](docs/): las instrucciones original
 ## Estructura
 
 ```
+admin/                   # panel de administración: colas de extracción y alta, revisión y avance
+progreso.py              # eventos de avance de los scripts (texto en terminal, JSON para el panel)
 extraer_web.py           # arma un borrador de clinicas.json leyendo la web de la clínica (Playwright + Claude)
 crear_subcuenta.py       # paso 0: crea la subcuenta de GHL en el navegador (Playwright + Brave)
 alta.py                  # alta completa de una clínica (GHL + Retell + registro)
@@ -33,7 +35,7 @@ middleware/
   probar_ghl.py          # prueba las funciones de GHL y borra lo que crea
 ```
 
-Archivos locales que **no** se suben: `.env`, `clinicas.json`, `borradores/`, `registro.json` (IDs y secretos de cada clínica), `llamadas.json`, `ghl-alta/.ghl_oauth.json` (tokens OAuth) y los logs.
+Archivos locales que **no** se suben: `.env`, `clinicas.json`, `borradores/`, `admin.db`, `registro.json` (IDs y secretos de cada clínica), `llamadas.json`, `ghl-alta/.ghl_oauth.json` (tokens OAuth) y los logs.
 
 ## Configuración (una sola vez)
 
@@ -47,7 +49,52 @@ cd ghl-alta && ../.venv/bin/python ghl_oauth.py instalar   # instala la app de M
 
 Al instalar la app, elegí la agencia y marcá que se instale en todas las subcuentas, también las futuras.
 
-## Cargar los datos de la clínica desde su web
+## Panel de administración (recomendado)
+
+Hace todo el circuito desde el navegador:
+1. Pegás varias webs.
+2. Se extraen sus datos.
+3. Revisás y completás cada clínica.
+4. Se da de alta: subcuenta + GHL + agente de Retell.
+
+```bash
+brave-browser --remote-debugging-port=9222          # con la sesión de GHL iniciada (para crear subcuentas)
+.venv/bin/uvicorn admin.app:app --host 127.0.0.1 --port 8001
+# abrir http://127.0.0.1:8001
+```
+
+**Colas:**
+- Hay dos colas y cada una procesa de a una clínica: **extracción** y **alta**.
+- Mientras revisás una clínica, las extracciones siguientes avanzan solas.
+- Las altas corren estrictamente de a una, porque hay un solo Brave.
+
+**Revisión:**
+- Formulario por secciones, con la grilla del horario por día y la vista previa del prompt.
+- Los campos `COMPLETAR` se marcan en rojo. Al lado se ven lo que falta, las contradicciones, las observaciones y la página de donde salió cada dato.
+- El servidor no deja validar si falta algo:
+  - emails y teléfonos mal escritos;
+  - zona horaria inválida;
+  - tramos de horario mal cargados;
+  - un slug repetido.
+
+**Validar y dar de alta:**
+- La clínica se escribe en `clinicas.json` y se encola el alta.
+- Corre `crear_subcuenta.py <slug> --alta`, el mismo comando de la terminal.
+
+**Avance:**
+- Cada clínica muestra la etapa, el paso y un registro de actividad: extracción → subcuenta → GHL → Retell.
+- Si falla, se ve el error y la captura del navegador, y se puede reintentar sin duplicar nada.
+- Al terminar aparecen los links a la subcuenta, al agente y a la página de llamadas.
+
+**Estado del sistema:** arriba se muestra si responden Brave, el middleware y ngrok, si faltan claves en `.env` y cuántas clínicas hay en cada cola.
+
+**Seguridad:** el panel escucha solo en `127.0.0.1`. **No lo publiques con ngrok**: crea subcuentas y gasta créditos.
+
+El estado se guarda en `admin.db` (SQLite). Si el panel se reinicia mientras algo corre, esa clínica queda con error ("interrumpida") y se reintenta desde la lista.
+
+Los scripts emiten eventos con `progreso.py`. En la terminal muestran el mismo texto de siempre; con `ALTA_EVENTOS=json`, que es como los corre el panel, emiten líneas JSON.
+
+## Cargar los datos de la clínica desde su web (terminal)
 
 ```bash
 .venv/bin/python extraer_web.py https://www.clinica.com

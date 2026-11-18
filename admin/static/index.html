@@ -1,0 +1,24 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Alta de clínicas</title>
+  <link rel="stylesheet" href="/static/estilos.css">
+</head>
+<body>
+  <header class="barra">
+    <a href="#/" class="marca">Alta de clínicas</a>
+    <div id="sistema" class="sistema"></div>
+  </header>
+  <main id="vista"></main>
+  <dialog id="dialogo">
+    <div class="dialogo-cabecera">
+      <strong id="dialogo-titulo"></strong>
+      <button class="btn chico" onclick="document.getElementById('dialogo').close()">Cerrar</button>
+    </div>
+    <div id="dialogo-cuerpo"></div>
+  </dialog>
+  <script src="/static/app.js"></script>
+</body>
+</html>

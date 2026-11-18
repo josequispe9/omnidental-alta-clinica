@@ -27,6 +27,7 @@ from playwright.sync_api import sync_playwright
 RAIZ = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, os.path.join(RAIZ, "ghl-alta"))
 import ghl_oauth  # noqa: E402
+from progreso import evento, resultado  # noqa: E402
 
 APP = "https://app.gohighlevel.com"
 CDP = os.getenv("BRAVE_CDP", "http://127.0.0.1:9222")
@@ -97,7 +98,7 @@ def crear_en_navegador(c, snapshot):
         page = contexto.new_page()
         page.set_default_timeout(30000)
         try:
-            print("[1] Abrir Sub-Accounts")
+            evento("subcuenta", 1, "Abrir Sub-Accounts", texto="[1] Abrir Sub-Accounts")
             page.goto(f"{APP}/accounts", wait_until="domcontentloaded")
             try:
                 page.locator("button#header-list-btn").wait_for(timeout=30000)
@@ -105,7 +106,7 @@ def crear_en_navegador(c, snapshot):
                 sys.exit(f"No veo el botón 'Create Sub-Account' (¿sesión de GHL iniciada en Brave?). URL: {page.url}")
             page.locator("button#header-list-btn").click()
 
-            print(f"[2] Snapshot: {snapshot}")
+            evento("subcuenta", 2, f"Elegir snapshot: {snapshot}", texto=f"[2] Snapshot: {snapshot}")
             # GHL tiene dos modales con id add-new-variation (uno oculto): se trabaja solo con lo visible
             buscador = page.get_by_placeholder("Snapshot name").filter(visible=True).first
             buscador.wait_for(timeout=30000)
@@ -122,12 +123,12 @@ def crear_en_navegador(c, snapshot):
             except PWTimeout:
                 continuar.first.click()  # versión del modal con botón "Continue" aparte
 
-            print("[3] Alta manual")
+            evento("subcuenta", 3, "Alta manual", texto="[3] Alta manual")
             page.wait_for_url("**/accounts/search**")
             page.locator("div#prospect_location_search a.add-manually").click()
             page.wait_for_url("**/accounts/add**")
 
-            print("[4] Completar formulario")
+            evento("subcuenta", 4, "Completar formulario", texto="[4] Completar formulario")
             page.locator("div#firstName input").wait_for()
             escribir(page, "firstName", p["contacto"]["nombre"])
             escribir(page, "lastName", p["contacto"]["apellido"])
@@ -143,12 +144,12 @@ def crear_en_navegador(c, snapshot):
                 escribir(page, "plocationWebsite", p["web"])
             elegir_opcion(page, campo_por_etiqueta(page, "Time Zone"), p["timezone"], p["timezone"])
 
-            print("[5] Crear subcuenta")
+            evento("subcuenta", 5, "Crear subcuenta", texto="[5] Crear subcuenta")
             page.locator("button#submit").click()
             page.wait_for_url(re.compile(r".*/accounts/detail/[A-Za-z0-9]+"), timeout=60000)
             location_id = re.search(r"/accounts/detail/([A-Za-z0-9]+)", page.url).group(1)
 
-            print("[6] Cambiar a la subcuenta")
+            evento("subcuenta", 6, "Cambiar a la subcuenta", texto="[6] Cambiar a la subcuenta")
             page.locator("button#switch-account").click()
             page.wait_for_url(re.compile(r".*/v2/location/[A-Za-z0-9]+/"), timeout=60000)
             location_id = re.search(r"/v2/location/([A-Za-z0-9]+)/", page.url).group(1)
@@ -156,7 +157,8 @@ def crear_en_navegador(c, snapshot):
         except Exception:
             captura = os.path.join(RAIZ, "error_crear_subcuenta.png")
             page.screenshot(path=captura, full_page=True)
-            print(f"Falló en {page.url}. Captura: {captura}")
+            evento("subcuenta", "error", f"Falló en {page.url}", nivel="error", captura=captura,
+                   texto=f"Falló en {page.url}. Captura: {captura}")
             raise
 
 
@@ -184,16 +186,19 @@ def main():
 
     location_id = subcuenta_existente(c["clinica"])
     if location_id:
-        print(f"Ya existe una subcuenta '{c['clinica']}': no se crea otra.")
+        evento("subcuenta", 6, f"Ya existe una subcuenta '{c['clinica']}': no se crea otra", nivel="aviso",
+               texto=f"Ya existe una subcuenta '{c['clinica']}': no se crea otra.")
     else:
         location_id = crear_en_navegador(c, args.snapshot)
-    print(f"\nlocationId: {location_id}")
+    evento("subcuenta", "id", f"Subcuenta: {location_id}", texto=f"\nlocationId: {location_id}")
+    resultado(location_id=location_id)
 
-    print("Esperando que la app de Marketplace quede instalada en la subcuenta...")
+    evento("subcuenta", "app", "Esperando que la app de Marketplace quede instalada en la subcuenta",
+           texto="Esperando que la app de Marketplace quede instalada en la subcuenta...")
     if not esperar_app_instalada(location_id):
         sys.exit("La app no se instaló sola. Instalala en la subcuenta y corré: "
                  f".venv/bin/python alta.py {args.slug} --location {location_id}")
-    print("App instalada.")
+    evento("subcuenta", "app", "App instalada", texto="App instalada.")
 
     if args.alta:
         print(f"\n=== Corriendo alta.py {args.slug} --location {location_id}\n", flush=True)

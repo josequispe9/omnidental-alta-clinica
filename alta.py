@@ -18,6 +18,7 @@ sys.path.insert(0, os.path.join(RAIZ, "middleware"))
 import alta_ghl  # noqa: E402
 import ghl_oauth  # noqa: E402
 import retell_alta  # noqa: E402
+from progreso import evento, resultado  # noqa: E402
 
 
 def main():
@@ -30,16 +31,21 @@ def main():
     ghl_oauth.cargar_env(() if args.dry_run else alta_ghl.REQUERIDAS + ("RETELL_APIKEY", "MIDDLEWARE_URL"))
     cfg = alta_ghl.leer_clinica(os.path.join(RAIZ, "clinicas.json"), args.slug)
 
-    print(f"=== GHL: {cfg['clinica']} -> {args.location}")
+    evento("ghl", "inicio", f"Configurar la subcuenta de GHL de {cfg['clinica']}",
+           texto=f"=== GHL: {cfg['clinica']} -> {args.location}")
     estado = alta_ghl.alta_ghl(cfg, args.location, args.dry_run)
     if not args.dry_run:
         alta_ghl.guardar_registro(cfg, estado)
 
-    print(f"\n=== Retell: agente de {cfg['clinica']}")
+    evento("retell", "inicio", f"Crear o actualizar el agente de Retell de {cfg['clinica']}",
+           texto=f"\n=== Retell: agente de {cfg['clinica']}")
     if args.dry_run:
         print("    (dry-run: se omite, necesita el registro de GHL)")
         return
     r = retell_alta.alta_retell(args.slug, args.location)
+    evento("fin", "ok", f"Alta lista: {cfg['clinica']}", texto="")
+    resultado(location_id=args.location, calendar_id=estado["calendar_id"], pipeline_id=estado["pipeline_id"],
+              agent_id=r["agent_id"], version=r["version_publicada"], vista_token=estado.get("vista_token"))
 
     print(f"""
 === Alta lista: {cfg['clinica']}

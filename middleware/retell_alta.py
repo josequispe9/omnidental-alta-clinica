@@ -21,6 +21,9 @@ RAIZ = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..")
 sys.path.insert(0, os.path.join(RAIZ, "ghl-alta"))
 import ghl_oauth  # noqa: E402  (solo para leer el .env)
 
+sys.path.insert(0, RAIZ)
+from progreso import evento  # noqa: E402
+
 REGISTRO = os.path.join(RAIZ, "registro.json")
 CLINICAS = os.path.join(RAIZ, "clinicas.json")
 BASE = "https://api.retellai.com"
@@ -165,22 +168,22 @@ def alta_retell(slug, location_id, dry_run=False):
         version = ultima["version"]
         if ultima["is_published"]:
             version = retell("POST", f"/create-agent-version/{agent_id}", json={"base_version": version})["version"]
-            print(f"[R0] Borrador nuevo: versión {version}")
+            evento("retell", "R0", f"Borrador nuevo: versión {version}", texto=f"[R0] Borrador nuevo: versión {version}")
         retell("PATCH", f"/update-retell-llm/{llm_id}", params={"version": version}, json=llm)
-        print(f"[R1] LLM actualizado: {llm_id} (versión {version})")
+        evento("retell", "R1", f"LLM actualizado (versión {version})", texto=f"[R1] LLM actualizado: {llm_id} (versión {version})")
         agente = cuerpo_agente(c, llm_id, token)
         agente["response_engine"]["version"] = version
         retell("PATCH", f"/update-agent/{agent_id}", params={"version": version}, json=agente)
-        print(f"[R2] Agente actualizado: {agent_id} (versión {version})")
+        evento("retell", "R2", f"Agente actualizado (versión {version})", texto=f"[R2] Agente actualizado: {agent_id} (versión {version})")
     else:
         llm_id = retell("POST", "/create-retell-llm", json=llm)["llm_id"]
-        print(f"[R1] LLM creado: {llm_id}")
+        evento("retell", "R1", "LLM creado", texto=f"[R1] LLM creado: {llm_id}")
         r = retell("POST", "/create-agent", json=cuerpo_agente(c, llm_id, token))
         agent_id, version = r["agent_id"], r.get("version", 0)
-        print(f"[R2] Agente creado: {agent_id}")
+        evento("retell", "R2", "Agente creado", texto=f"[R2] Agente creado: {agent_id}")
 
     retell("POST", f"/publish-agent-version/{agent_id}", json={"version": version})
-    print(f"[R3] Agente publicado (versión {version})")
+    evento("retell", "R3", f"Agente publicado (versión {version})", texto=f"[R3] Agente publicado (versión {version})")
 
     # Deja solo la versión publicada: si quedan versiones viejas, el botón Test del panel puede usar una de ellas.
     # Retell no deja borrar la versión 0 (por eso el secreto va desde la creación del agente).
@@ -190,9 +193,10 @@ def alta_retell(slug, location_id, dry_run=False):
         r = requests.delete(f"{BASE}/delete-agent-version/{agent_id}", params={"version": v}, timeout=30,
                             headers={"Authorization": f"Bearer {os.environ['RETELL_APIKEY']}"})
         if r.status_code >= 400:
-            print(f"    aviso: no se pudo borrar la versión {v}: {r.text[:200]}")
+            evento("retell", "R4", f"No se pudo borrar la versión {v}: {r.text[:200]}", nivel="aviso",
+                   texto=f"    aviso: no se pudo borrar la versión {v}: {r.text[:200]}")
     if viejas:
-        print(f"[R4] Versiones viejas borradas: {sorted(viejas)}")
+        evento("retell", "R4", f"Versiones viejas borradas: {sorted(viejas)}", texto=f"[R4] Versiones viejas borradas: {sorted(viejas)}")
 
     registro[location_id]["retell"] = {"agent_id": agent_id, "llm_id": llm_id, "version_publicada": version,
                                        "token": token}
