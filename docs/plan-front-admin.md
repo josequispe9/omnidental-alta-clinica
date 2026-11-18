@@ -1,6 +1,6 @@
 # Plan: panel de administración para el alta de clínicas
 
-> Implementado. Después se pasó todo a una base SQLite (`omnidental.db`, ver `datos.py`): donde este plan dice `clinicas.json`, `registro.json` o `admin.db`, hoy es esa base.
+> Implementado. Después se pasó todo a una base de datos, hoy Postgres en Supabase (ver `datos.py`): donde este plan dice `clinicas.json`, `registro.json` o `admin.db`, hoy es esa base.
 
 ## Qué tiene que hacer
 1. Pegar varias webs de clínicas y encolarlas para **extraer** los datos (`extraer_web.py`).

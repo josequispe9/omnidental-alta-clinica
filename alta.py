@@ -60,7 +60,7 @@ def main():
   Agente Retell : {r['agent_id']} (versión {r['version_publicada']})
   Menú en GHL   : "{alta_ghl.TITULO_MENU}" (recargá GHL para verlo)
 
-Para probar: middleware y ngrok corriendo, y en Retell -> Agents -> "{cfg['clinica']} - {cfg['agente']['nombre_asistente']}" -> Test.""")
+Para probar: en Retell -> Agents -> "{cfg['clinica']} - {cfg['agente']['nombre_asistente']}" -> Test.""")
 
 
 if __name__ == "__main__":

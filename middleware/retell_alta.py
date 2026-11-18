@@ -45,9 +45,8 @@ def _tool(token, nombre, descripcion, mensaje_espera, propiedades, requeridos):
     return {
         "type": "custom", "name": nombre, "description": descripcion,
         "url": f"{os.environ['MIDDLEWARE_URL'].rstrip('/')}/tools/{nombre}", "method": "POST",
-        # el dominio gratuito de ngrok muestra una página de aviso si no va este header
         # X-Middleware-Token: secreto de la clínica para que el middleware sepa que el pedido viene de su agente
-        "headers": {"ngrok-skip-browser-warning": "1", "X-Middleware-Token": token},
+        "headers": {"X-Middleware-Token": token},
         "parameters": {"type": "object", "properties": propiedades, "required": requeridos},
         "speak_during_execution": True, "execution_message_description": mensaje_espera,
         "speak_after_execution": True, "timeout_ms": 20000,

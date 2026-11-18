@@ -65,9 +65,9 @@ Todo vive en Postgres, en el proyecto de Supabase `omnidental-demo` (us-east-1),
 - El middleware guarda en memoria por 30 s la relación agente → subcuenta y los datos de cada subcuenta, que solo cambian con un alta.
 - Los access token de cada subcuenta se guardan en memoria hasta que vencen. Los refresh tokens siempre se leen de la base, porque GHL los rota.
 
-Mientras el middleware corra en tu máquina, cada consulta a la base tarda unos 0,4 s. Una herramienta del agente tarda unos 4 s la primera vez y alrededor de 1 s las siguientes. En la nube, en la misma región que la base, la latencia de la base baja a milisegundos.
+El middleware corre en Vercel en la misma región que la base (us-east-1), así que cada consulta tarda milisegundos.
 
-Archivos locales que **no** se suben: `.env`, `borradores/` y los logs. La base SQLite anterior se copia a Supabase con `datos.py migrar-sqlite <archivo>`.
+Archivos locales que **no** se suben: `.env`, `borradores/` y los logs.
 
 ## Configuración (una sola vez)
 
@@ -119,7 +119,7 @@ brave-browser --remote-debugging-port=9222          # con la sesión de GHL inic
 
 **Estado del sistema:** arriba se muestra si responden Brave y el middleware (en Vercel), si faltan claves en `.env` y cuántas clínicas hay en cada cola.
 
-**Seguridad:** el panel escucha solo en `127.0.0.1`. **No lo publiques con ngrok**: crea subcuentas y gasta créditos.
+**Seguridad:** el panel escucha solo en `127.0.0.1`. **No lo publiques en internet**: crea subcuentas y gasta créditos.
 
 El estado se guarda en la misma base de Supabase. Las clínicas cargadas desde la terminal también aparecen en el panel. Si el panel se reinicia mientras algo corre, esa clínica queda con error ("interrumpida") y se reintenta desde la lista.
 
@@ -228,12 +228,7 @@ npx vercel logs --project omnidental-middleware --scope josequispe-freelance   #
 
 `MIDDLEWARE_URL` en el `.env` local apunta a Vercel. El alta usa esa URL para las herramientas y el webhook de cada agente en Retell, y para el menú de llamadas en GHL. Si cambia la URL, hay que correr el alta de nuevo en cada clínica.
 
-Para desarrollar en local se puede seguir corriendo así, cambiando antes `MIDDLEWARE_URL` a la URL de ngrok:
-
-```bash
-cd middleware && ../.venv/bin/uvicorn app:app --port 8000
-ngrok http 8000 --url <dominio de ngrok>
-```
+Para probar cambios antes de subirlos, un push a otra rama genera una versión preview en Vercel.
 
 | Endpoint | Para qué |
 |---|---|

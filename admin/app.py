@@ -1,6 +1,6 @@
 """Panel de administración: extraer webs, revisar los datos y dar de alta clínicas, en cola.
 
-Solo para uso local (no pasar por ngrok: crea subcuentas y gasta créditos):
+Solo para uso local (no publicarlo en internet: crea subcuentas y gasta créditos):
 
   .venv/bin/uvicorn admin.app:app --host 127.0.0.1 --port 8001
 """
@@ -54,7 +54,7 @@ def estado():
     mw = os.getenv("MIDDLEWARE_URL", "").rstrip("/")
     return {
         "brave": colas.brave_abierto(),
-        "middleware": bool(mw) and _responde(f"{mw}/salud", headers={"ngrok-skip-browser-warning": "1"}),
+        "middleware": bool(mw) and _responde(f"{mw}/salud"),
         "middleware_url": mw,
         "claves_faltantes": [k for k in CLAVES if not os.getenv(k)],
         "colas": {"extraccion": {"en_cola": db.cantidad(db.EN_COLA_EXTRACCION), "corriendo": db.cantidad(db.EXTRAYENDO)},

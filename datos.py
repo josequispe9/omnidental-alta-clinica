@@ -14,13 +14,11 @@ Uso desde la terminal:
   .venv/bin/python datos.py listar
   .venv/bin/python datos.py exportar <slug> [archivo.json]     # para editar una clínica a mano
   .venv/bin/python datos.py importar <archivo.json>            # una clínica o una lista (formato clinicas.example.json)
-  .venv/bin/python datos.py migrar-sqlite [omnidental.db]      # copia la base SQLite anterior a Supabase
 """
 import argparse
 import atexit
 import json
 import os
-import sqlite3
 import sys
 import threading
 import time
@@ -294,39 +292,6 @@ def eventos(cid, desde=0):
     return _todas(f"SELECT * FROM {T}eventos WHERE clinica_id = ANY(%s) AND id > %s ORDER BY id", (ids, desde))
 
 
-# ---------- migración desde la base SQLite anterior ----------
-
-def migrar_sqlite(ruta):
-    """Copia clinicas, eventos, llamadas y tokens de omnidental.db (SQLite) conservando los ids."""
-    if not os.path.exists(ruta):
-        sys.exit(f"No existe {ruta}")
-    s = sqlite3.connect(ruta)
-    s.row_factory = sqlite3.Row
-    if _una(f"SELECT COUNT(*) AS n FROM {T}clinicas")["n"]:
-        sys.exit("La base de Supabase ya tiene clínicas: no se migra encima")
-    with _conexion() as c, c.transaction():
-        for r in s.execute("SELECT * FROM clinicas ORDER BY id"):
-            d = {k: (json.loads(r[k]) if k in JSON_COLS and r[k] else r[k]) for k in r.keys()}
-            d = _json(d)
-            c.execute(f"INSERT INTO {T}clinicas ({', '.join(d)}) OVERRIDING SYSTEM VALUE VALUES ({', '.join(['%s'] * len(d))})",
-                      tuple(d.values()))
-        n_ev = 0
-        for r in s.execute("SELECT * FROM eventos ORDER BY id"):
-            c.execute(f"INSERT INTO {T}eventos (id, clinica_id, ts, etapa, paso, nivel, mensaje) OVERRIDING SYSTEM VALUE "
-                      "VALUES (%s,%s,%s,%s,%s,%s,%s)", tuple(r))
-            n_ev += 1
-        for r in s.execute("SELECT * FROM llamadas"):
-            c.execute(f"INSERT INTO {T}llamadas VALUES (%s,%s,%s,%s)", tuple(r))
-        for r in s.execute("SELECT * FROM tokens"):
-            c.execute(f"INSERT INTO {T}tokens VALUES (%s,%s,%s)", (r["clave"], Jsonb(json.loads(r["valor"])), r["actualizado"]))
-        for tabla in ("clinicas", "eventos"):  # que los ids nuevos sigan después de los migrados
-            c.execute(f"SELECT setval(pg_get_serial_sequence('{T}{tabla}', 'id'), "
-                      f"COALESCE((SELECT MAX(id) FROM {T}{tabla}), 0) + 1, false)")
-    print(f"Migrado: {s.execute('SELECT COUNT(*) FROM clinicas').fetchone()[0]} clínicas, {n_ev} eventos, "
-          f"{s.execute('SELECT COUNT(*) FROM llamadas').fetchone()[0]} llamadas, "
-          f"{s.execute('SELECT COUNT(*) FROM tokens').fetchone()[0]} tokens")
-
-
 def _leer_json(ruta):
     with open(ruta) as f:
         return json.load(f)
@@ -341,8 +306,6 @@ def main():
     e.add_argument("archivo", nargs="?")
     i = sub.add_parser("importar")
     i.add_argument("archivo")
-    m = sub.add_parser("migrar-sqlite")
-    m.add_argument("ruta", nargs="?", default=os.path.join(RAIZ, "omnidental.db"))
     a = ap.parse_args()
 
     if a.cmd == "listar":
@@ -365,8 +328,6 @@ def main():
             if not c.get("slug"):
                 sys.exit("Cada clínica necesita un slug")
             print(f"  {c['slug']}: id {guardar_clinica(c)}")
-    elif a.cmd == "migrar-sqlite":
-        migrar_sqlite(a.ruta)
 
 
 if __name__ == "__main__":

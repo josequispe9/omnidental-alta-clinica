@@ -1,8 +1,7 @@
 """Middleware Retell <-> GHL.
 
-Correr (desde middleware/):
+Corre en Vercel (index.py en la raíz del repo). En local, desde middleware/:
   ../.venv/bin/uvicorn app:app --port 8000
-  ngrok http 8000 --url <MIDDLEWARE_URL>
 
 Endpoints:
   POST /tools/{nombre}   herramientas del agente de Retell (firma verificada)
