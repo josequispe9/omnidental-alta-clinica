@@ -38,7 +38,8 @@ async function refrescarSistema() {
     const s = await api("GET", "/api/estado");
     const chip = (ok, t) => `<span class="chip ${ok ? "ok" : "mal"}">${ok ? "●" : "○"} ${esc(t)}</span>`;
     $("#sistema").innerHTML = [
-      chip(s.brave, "Brave"), chip(s.middleware, "Middleware"), chip(s.ngrok, "ngrok"),
+      chip(s.brave, "Brave"),
+      chip(s.middleware, `Middleware (${/vercel\.app/.test(s.middleware_url) ? "Vercel" : s.middleware_url.replace(/^https?:\/\//, "")})`),
       chip(!s.claves_faltantes.length, s.claves_faltantes.length ? `Faltan: ${s.claves_faltantes.join(", ")}` : "Claves"),
       `<span class="chip info">Extracción: ${s.colas.extraccion.corriendo ? "1 corriendo" : "libre"} · ${s.colas.extraccion.en_cola} en cola</span>`,
       `<span class="chip info">Alta: ${s.colas.alta.corriendo ? "1 corriendo" : "libre"} · ${s.colas.alta.en_cola} en cola</span>`,

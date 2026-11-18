@@ -1,0 +1,6 @@
+# Todo el proyecto local (panel, extractor, scripts). Incluye las del middleware.
+-r requirements.txt
+uvicorn==0.54.0
+playwright==1.65.2
+anthropic==2.10.0
+pydantic==2.14.3

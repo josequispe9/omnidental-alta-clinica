@@ -1,8 +1,6 @@
+# Dependencias del middleware (lo que instala Vercel). Para todo el proyecto local: requirements-local.txt
 fastapi==0.163.2
-uvicorn==0.54.0
 requests==2.34.2
-playwright==1.65.2
-anthropic==2.10.0
-pydantic==2.14.3
 psycopg[binary,pool]==3.3.9
 psycopg-pool==3.3.3
+tzdata==2026.6

@@ -26,3 +26,6 @@ clinicas.json.tmp
 omnidental.db
 omnidental.db-*
 respaldo-archivos/
+.vercel
+.env*
+!.env.example

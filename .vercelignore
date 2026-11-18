@@ -1,0 +1,16 @@
+# Solo se despliega el middleware (index.py + middleware/ + datos.py + ghl-alta/ghl_oauth.py)
+admin/
+docs/
+borradores/
+respaldo-archivos/
+extraer_web.py
+crear_subcuenta.py
+alta.py
+progreso.py
+clinicas.example.json
+requirements-local.txt
+*.log
+.env
+.env.*
+.venv/
+__pycache__/

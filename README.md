@@ -7,7 +7,9 @@ Da de alta una clínica dental con un solo comando:
 - **Middleware (Python, FastAPI):** conecta los dos. El agente lo usa para consultar disponibilidad, registrar pacientes, agendar turnos y enviar correos. Al terminar cada llamada guarda el resumen en GHL.
 
 ```
-[Retell] <-> [Middleware local + ngrok] <-> [GHL]
+[Retell] <-> [Middleware en Vercel] <-> [GHL]
+                     |
+               [Supabase]
 ```
 
 El ID de cada clínica es el `locationId` de su subcuenta de GHL. Un solo middleware atiende a todas las clínicas.
@@ -71,7 +73,7 @@ Archivos locales que **no** se suben: `.env`, `borradores/` y los logs. La base 
 
 ```bash
 python3 -m venv .venv
-.venv/bin/pip install -r requirements.txt
+.venv/bin/pip install -r requirements-local.txt   # requirements.txt: solo lo que usa el middleware en Vercel
 cp .env.example .env                       # completar los valores
 cd ghl-alta && ../.venv/bin/python ghl_oauth.py instalar   # instala la app de Marketplace en la agencia
 ```
@@ -115,7 +117,7 @@ brave-browser --remote-debugging-port=9222          # con la sesión de GHL inic
 - Si falla, se ve el error y la captura del navegador, y se puede reintentar sin duplicar nada.
 - Al terminar aparecen los links a la subcuenta, al agente y a la página de llamadas.
 
-**Estado del sistema:** arriba se muestra si responden Brave, el middleware y ngrok, si faltan claves en `.env` y cuántas clínicas hay en cada cola.
+**Estado del sistema:** arriba se muestra si responden Brave y el middleware (en Vercel), si faltan claves en `.env` y cuántas clínicas hay en cada cola.
 
 **Seguridad:** el panel escucha solo en `127.0.0.1`. **No lo publiques con ngrok**: crea subcuentas y gasta créditos.
 
@@ -201,11 +203,34 @@ Es idempotente: si lo corrés de nuevo, actualiza lo que ya existe. El agente de
 
 El token de subcuenta lo pide `ghl_oauth.py` con la app de Marketplace, así que no hace falta una clave por subcuenta. Los pasos 0 y 6 usan la integración privada de agencia, porque la app no tiene esos permisos.
 
-## Correr el middleware
+## Middleware en Vercel
+
+Corre en Vercel: **https://omnidental-middleware.vercel.app**. Es el proyecto `omnidental-middleware`, en la región `iad1`, la misma que la base de Supabase.
+
+- **`index.py`:** el punto de entrada. Carga la app FastAPI de `middleware/`.
+- **`vercel.json`:** el framework (FastAPI), la región y un tiempo máximo de 60 s por pedido.
+- **`.vercelignore`:** sube solo el middleware. El panel, el extractor y los scripts quedan afuera.
+- **`requirements.txt`:** solo lo que usa el middleware. Todo el proyecto local se instala con `requirements-local.txt`.
+- **Variables de entorno en Vercel:**
+  - `SUPABASE_DB_URL`: el pooler de transacciones de Supabase, puerto 6543, el recomendado para serverless;
+  - `GHL_CLIENT_ID` y `GHL_CLIENT_SECRET`;
+  - `RETELL_APIKEY`;
+  - `MIDDLEWARE_URL`.
+
+  Se cargan con `vercel env add`, nunca en el repo.
+
+```bash
+npx vercel deploy --prod --scope josequispe-freelance      # desplegar una versión nueva
+npx vercel logs --project omnidental-middleware --scope josequispe-freelance   # ver los logs
+```
+
+`MIDDLEWARE_URL` en el `.env` local apunta a Vercel. El alta usa esa URL para las herramientas y el webhook de cada agente en Retell, y para el menú de llamadas en GHL. Si cambia la URL, hay que correr el alta de nuevo en cada clínica.
+
+Para desarrollar en local se puede seguir corriendo así, cambiando antes `MIDDLEWARE_URL` a la URL de ngrok:
 
 ```bash
 cd middleware && ../.venv/bin/uvicorn app:app --port 8000
-ngrok http 8000 --url <MIDDLEWARE_URL>
+ngrok http 8000 --url <dominio de ngrok>
 ```
 
 | Endpoint | Para qué |
@@ -220,12 +245,13 @@ ngrok http 8000 --url <MIDDLEWARE_URL>
 - Cada clínica tiene un secreto propio, que el alta pone en las herramientas del agente (header `X-Middleware-Token`) y en la URL del webhook. El middleware también acepta la firma de Retell.
 - Las páginas de llamadas exigen otro token por clínica, que va en la URL del menú de GHL.
 
-Para probar un agente: con el middleware y ngrok corriendo, entrá a Retell → Agents → el agente de la clínica → Test.
+Para probar un agente: entrá a Retell → Agents → el agente de la clínica → Test. Recargá la página si acabás de correr el alta.
 
 ## Limitaciones conocidas (demo)
 
 - Las subcuentas de GHL se crean desde el navegador (la API requiere Agency Pro). Si GHL cambia su panel, hay que ajustar `crear_subcuenta.py`.
 - Los correos salen del dominio compartido de GHL y suelen llegar a spam.
-- El middleware corre en local: si ngrok o la máquina se apagan, el agente no puede usar sus herramientas. El prompt le indica tomar los datos y avisar que la clínica va a llamar.
+- El panel de administración sigue corriendo en local, porque crea subcuentas con tu Brave. El middleware ya no depende de tu máquina.
+- Si el middleware falla, el agente no puede usar sus herramientas. El prompt le indica tomar los datos y avisar que la clínica va a llamar.
 - Sin Twilio en la demo (requiere cuenta paga): el agente se prueba con llamadas web y pide el teléfono al paciente. Cómo se conectaría un número por SIP Trunk y cómo se automatizaría para 50 clínicas: [`docs/telefonia-twilio-retell.md`](docs/telefonia-twilio-retell.md).
 - La transcripción y la grabación quedan en Retell. Por defecto el link del audio no vence.

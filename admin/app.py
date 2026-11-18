@@ -54,8 +54,8 @@ def estado():
     mw = os.getenv("MIDDLEWARE_URL", "").rstrip("/")
     return {
         "brave": colas.brave_abierto(),
-        "middleware": _responde("http://127.0.0.1:8000/salud"),
-        "ngrok": bool(mw) and _responde(f"{mw}/salud", headers={"ngrok-skip-browser-warning": "1"}),
+        "middleware": bool(mw) and _responde(f"{mw}/salud", headers={"ngrok-skip-browser-warning": "1"}),
+        "middleware_url": mw,
         "claves_faltantes": [k for k in CLAVES if not os.getenv(k)],
         "colas": {"extraccion": {"en_cola": db.cantidad(db.EN_COLA_EXTRACCION), "corriendo": db.cantidad(db.EXTRAYENDO)},
                   "alta": {"en_cola": db.cantidad(db.EN_COLA_ALTA), "corriendo": db.cantidad(db.EN_ALTA)}},
