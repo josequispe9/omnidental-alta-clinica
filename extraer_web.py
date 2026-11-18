@@ -1,16 +1,18 @@
-"""Arma un borrador de clinicas.json a partir de la web de una clínica.
+"""Arma el borrador de una clínica (formato clinicas.example.json) a partir de su web.
 
 1. Recorre la web: mapa del sitio + links del inicio, sin blog ni otros idiomas (unas 25 páginas).
    Descarga sin navegador y pasa a Playwright si hay captcha o la página viene vacía.
 2. Saca lo seguro sin modelo de lenguaje: links tel:/mailto:/WhatsApp, schema.org (JSON-LD), iframes y PDFs.
 3. Claude arma la ficha con el texto de las páginas: no inventa, indica la fuente de cada dato,
    separa sedes y reporta contradicciones.
-4. Guarda en borradores/ un JSON con una entrada de clinicas.json por sede, más lo que falta revisar.
+4. Guarda en borradores/ un JSON con una clínica por sede, más lo que falta revisar.
+   Con --importar, además carga cada sede en la base como "por revisar" (se revisa y se da de alta desde el panel).
 
-El borrador NO se agrega solo a clinicas.json: hay que revisarlo, completar lo marcado y copiarlo.
+Lo normal es usarlo desde el panel de administración (admin/), que lo corre en cola.
 
 Uso:
   .venv/bin/python extraer_web.py https://www.clinica.com
+  .venv/bin/python extraer_web.py https://www.clinica.com --importar
   .venv/bin/python extraer_web.py https://www.clinica.com --paginas 15 --solo-recorrer
 """
 import argparse
@@ -20,7 +22,7 @@ import re
 import sys
 import time
 import unicodedata
-from typing import Literal, Optional
+
 from urllib.parse import urldefrag, urljoin, urlparse
 
 import anthropic
@@ -32,6 +34,7 @@ from pydantic import BaseModel, Field
 RAIZ = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, os.path.join(RAIZ, "ghl-alta"))
 import ghl_oauth  # noqa: E402  (solo para leer el .env)
+import datos  # noqa: E402
 from progreso import evento, resultado  # noqa: E402
 
 SALIDA = os.path.join(RAIZ, "borradores")
@@ -506,7 +509,7 @@ def armar_ficha(rec, seguros):
     return ficha
 
 
-# ---------- 4. Borrador de clinicas.json ----------
+# ---------- 4. Borrador (formato clinicas.example.json) ----------
 
 VOZ = {"es-ES": "cartesia-Isabel", "es-419": "cartesia-Hailey-Spanish-latin-america"}
 DIAS = ["lunes", "martes", "miercoles", "jueves", "viernes", "sabado", "domingo"]
@@ -548,7 +551,7 @@ def tel(t):
 
 
 def a_clinicas(f, web):
-    """Una entrada de clinicas.json por sede. Lo que falta queda como "COMPLETAR"."""
+    """Una clínica por sede. Lo que falta queda como "COMPLETAR"."""
     salida, slugs = [], set()
     for s in f.sedes:
         if len(f.sedes) == 1:
@@ -627,6 +630,7 @@ def main():
     ap.add_argument("--paginas", type=int, default=25, help="máximo de páginas a leer (por defecto 25)")
     ap.add_argument("--solo-recorrer", action="store_true", help="recorre y guarda el texto, sin consultar a Claude")
     ap.add_argument("--salida", help="ruta del borrador sin extensión (por defecto borradores/<dominio>)")
+    ap.add_argument("--importar", action="store_true", help="cargar las sedes en la base como 'por revisar' (panel)")
     args = ap.parse_args()
 
     ghl_oauth.cargar_env(() if args.solo_recorrer else ("ANTHROPIC_API_KEY",))
@@ -686,7 +690,16 @@ def main():
                 print(f"  - {i}")
     evento("extraccion", "borrador", f"Borrador listo: {len(clinicas)} sede(s)", texto=f"\nBorrador: {base}.json")
     resultado(borrador=os.path.abspath(base + ".json"))
-    print("Revisalo, completá lo marcado como COMPLETAR y copiá las entradas de \"clinicas\" a clinicas.json.")
+    if args.importar:
+        for c in clinicas:
+            c["slug"] = datos.slug_disponible(c["slug"])
+            cid = datos.crear_fila(url=rec["inicio"], estado=datos.POR_REVISAR, slug=c["slug"], nombre=c["clinica"],
+                                   datos=c, revision=borrador["revisar"], fuentes=borrador["fuentes"],
+                                   extra=borrador["extra"], mensaje="Lista para revisar (importada desde la terminal)")
+            print(f"Cargada en la base: {c['slug']} (id {cid}). Revisala en el panel.")
+    else:
+        print("Revisalo y completá lo marcado como COMPLETAR; para cargarlo en la base: datos.py importar "
+              "(una clínica por archivo) o volvé a correr con --importar.")
 
 
 def _completar(obj, ruta=""):

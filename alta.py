@@ -4,7 +4,7 @@ Uso:
   .venv/bin/python alta.py <slug> --location <locationId>
   .venv/bin/python alta.py <slug> --location <locationId> --dry-run
 
-Antes: crear la subcuenta a mano en GHL (con el plan actual la API no lo permite).
+Antes: crear la subcuenta (crear_subcuenta.py, que puede seguir solo con este alta usando --alta).
 Es idempotente: si se corre de nuevo, actualiza lo que ya existe.
 """
 import argparse
@@ -19,17 +19,18 @@ import alta_ghl  # noqa: E402
 import ghl_oauth  # noqa: E402
 import retell_alta  # noqa: E402
 from progreso import evento, resultado  # noqa: E402
+import datos  # noqa: E402
 
 
 def main():
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    ap.add_argument("slug", help="slug de la clínica en clinicas.json")
+    ap.add_argument("slug", help="slug de la clínica en la base (datos.py listar)")
     ap.add_argument("--location", required=True, help="ID de la subcuenta de GHL (es el ID de la clínica)")
     ap.add_argument("--dry-run", action="store_true")
     args = ap.parse_args()
 
     ghl_oauth.cargar_env(() if args.dry_run else alta_ghl.REQUERIDAS + ("RETELL_APIKEY", "MIDDLEWARE_URL"))
-    cfg = alta_ghl.leer_clinica(os.path.join(RAIZ, "clinicas.json"), args.slug)
+    cfg = alta_ghl.leer_clinica(args.slug)
 
     evento("ghl", "inicio", f"Configurar la subcuenta de GHL de {cfg['clinica']}",
            texto=f"=== GHL: {cfg['clinica']} -> {args.location}")
@@ -43,6 +44,10 @@ def main():
         print("    (dry-run: se omite, necesita el registro de GHL)")
         return
     r = retell_alta.alta_retell(args.slug, args.location)
+    fila = datos.fila_por_slug(args.slug)
+    datos.actualizar(fila["id"], estado=datos.LISTA, etapa="fin", paso="ok", avance=100, mensaje="Alta lista", error=None,
+                     resultado={"location_id": args.location, "agent_id": r["agent_id"],
+                                "version": r["version_publicada"], "vista_token": estado.get("vista_token")})
     evento("fin", "ok", f"Alta lista: {cfg['clinica']}", texto="")
     resultado(location_id=args.location, calendar_id=estado["calendar_id"], pipeline_id=estado["pipeline_id"],
               agent_id=r["agent_id"], version=r["version_publicada"], vista_token=estado.get("vista_token"))

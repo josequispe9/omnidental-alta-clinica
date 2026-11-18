@@ -1,9 +1,8 @@
 """Funciones de GHL que usa el middleware. Cada una recibe el locationId de la clínica (su ID).
 
-Los IDs de cada clínica (calendario, embudo, etapas, zona horaria) salen de ../registro.json,
+Los IDs de cada clínica (calendario, embudo, etapas, zona horaria) salen de la base (datos.py),
 que completa el alta. El token de la subcuenta lo pide ghl_oauth con la app de Marketplace.
 """
-import json
 import os
 import sys
 from datetime import date, datetime, time, timedelta
@@ -15,9 +14,11 @@ RAIZ = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..")
 sys.path.insert(0, os.path.join(RAIZ, "ghl-alta"))
 import ghl_oauth  # noqa: E402
 
+sys.path.insert(0, RAIZ)
+import datos  # noqa: E402
+
 ghl_oauth.cargar_env()
 BASE = "https://services.leadconnectorhq.com"
-REGISTRO = os.path.join(RAIZ, "registro.json")
 
 
 class ErrorGHL(Exception):
@@ -27,11 +28,11 @@ class ErrorGHL(Exception):
 
 
 def clinica(location_id):
-    with open(REGISTRO) as f:
-        registro = json.load(f)
-    if location_id not in registro:
-        raise ErrorGHL(f"La clínica {location_id} no está en registro.json (falta correr el alta)")
-    return registro[location_id]
+    """IDs y datos de la clínica de esa subcuenta (base: datos.registro)."""
+    c = datos.registro(location_id)
+    if not c:
+        raise ErrorGHL(f"La clínica {location_id} no está en la base (falta correr el alta)")
+    return c
 
 
 def _pedir(location_id, metodo, ruta, version="2021-07-28", **kwargs):

@@ -107,6 +107,7 @@ def cargar_borrador(cid, ruta):
         return
     comun = {"revision": borrador["revisar"], "fuentes": borrador["fuentes"], "extra": borrador["extra"]}
     for i, clinica in enumerate(borrador["clinicas"]):
+        clinica["slug"] = db.datos.slug_disponible(clinica["slug"])  # otra extracción de la misma web, etc.
         campos = {**comun, "datos": clinica, "slug": clinica["slug"], "nombre": clinica["clinica"],
                   "estado": db.POR_REVISAR, "etapa": "revision", "paso": "", "avance": 100,
                   "mensaje": "Lista para revisar" + (f" (sede {i + 1} de {len(borrador['clinicas'])})"

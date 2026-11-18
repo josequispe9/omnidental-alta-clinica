@@ -17,12 +17,13 @@ Los documentos de diseño están en [`docs/`](docs/): las instrucciones original
 ## Estructura
 
 ```
+datos.py                 # base de datos (SQLite, omnidental.db): única puerta a los datos; listar/exportar/importar
 admin/                   # panel de administración: colas de extracción y alta, revisión y avance
 progreso.py              # eventos de avance de los scripts (texto en terminal, JSON para el panel)
-extraer_web.py           # arma un borrador de clinicas.json leyendo la web de la clínica (Playwright + Claude)
+extraer_web.py           # arma el borrador de una clínica leyendo su web (Playwright + Claude)
 crear_subcuenta.py       # paso 0: crea la subcuenta de GHL en el navegador (Playwright + Brave)
 alta.py                  # alta completa de una clínica (GHL + Retell + registro)
-clinicas.example.json    # ejemplo de datos de clínicas (copiar a clinicas.json)
+clinicas.example.json    # ejemplo del formato de una clínica (para datos.py importar)
 ghl-alta/
   alta_ghl.py            # pasos del alta en GHL
   ghl_oauth.py           # app de Marketplace: token de cualquier subcuenta
@@ -35,7 +36,26 @@ middleware/
   probar_ghl.py          # prueba las funciones de GHL y borra lo que crea
 ```
 
-Archivos locales que **no** se suben: `.env`, `clinicas.json`, `borradores/`, `admin.db`, `registro.json` (IDs y secretos de cada clínica), `llamadas.json`, `ghl-alta/.ghl_oauth.json` (tokens OAuth) y los logs.
+## Datos
+
+Todo vive en una base SQLite, `omnidental.db`, y se accede solo por `datos.py`:
+
+| Tabla | Qué guarda |
+|---|---|
+| `clinicas` | Una fila por clínica o sede, de punta a punta: <ul><li>los datos de la clínica, como JSON en el formato de `clinicas.example.json`</li><li>el estado en el panel</li><li>los IDs de GHL y de Retell</li><li>el secreto del agente y el de la página de llamadas</li></ul> |
+| `eventos` | El registro de actividad de cada clínica |
+| `llamadas` | El contacto de GHL de cada llamada de Retell, para la nota de fin de llamada |
+| `tokens` | Los tokens OAuth de la app de Marketplace de GHL |
+
+```bash
+.venv/bin/python datos.py listar                          # clínicas, estado y subcuenta
+.venv/bin/python datos.py exportar <slug> clinica.json    # para editar una clínica a mano...
+.venv/bin/python datos.py importar clinica.json           # ...y volver a cargarla (o una lista de clínicas)
+```
+
+La base usa el modo WAL, así que el middleware, el panel y los scripts pueden usarla a la vez. Tiene secretos: su permiso es 600 y no se sube al repo. Si en algún momento el middleware pasa a la nube, se cambia solo `datos.py`, por ejemplo a Postgres.
+
+Archivos locales que **no** se suben: `.env`, `omnidental.db`, `borradores/` y los logs. Los JSON que se usaban antes (`clinicas.json`, `registro.json`, `llamadas.json` y `.ghl_oauth.json`) se importan con `datos.py migrar`.
 
 ## Configuración (una sola vez)
 
@@ -43,7 +63,6 @@ Archivos locales que **no** se suben: `.env`, `clinicas.json`, `borradores/`, `a
 python3 -m venv .venv
 .venv/bin/pip install -r requirements.txt
 cp .env.example .env                       # completar los valores
-cp clinicas.example.json clinicas.json     # cargar los datos reales de las clínicas
 cd ghl-alta && ../.venv/bin/python ghl_oauth.py instalar   # instala la app de Marketplace en la agencia
 ```
 
@@ -78,7 +97,7 @@ brave-browser --remote-debugging-port=9222          # con la sesión de GHL inic
   - un slug repetido.
 
 **Validar y dar de alta:**
-- La clínica se escribe en `clinicas.json` y se encola el alta.
+- Se guardan los datos revisados y se encola el alta.
 - Corre `crear_subcuenta.py <slug> --alta`, el mismo comando de la terminal.
 
 **Avance:**
@@ -90,7 +109,7 @@ brave-browser --remote-debugging-port=9222          # con la sesión de GHL inic
 
 **Seguridad:** el panel escucha solo en `127.0.0.1`. **No lo publiques con ngrok**: crea subcuentas y gasta créditos.
 
-El estado se guarda en `admin.db` (SQLite). Si el panel se reinicia mientras algo corre, esa clínica queda con error ("interrumpida") y se reintenta desde la lista.
+El estado se guarda en la misma base, `omnidental.db`. Las clínicas cargadas desde la terminal también aparecen en el panel. Si el panel se reinicia mientras algo corre, esa clínica queda con error ("interrumpida") y se reintenta desde la lista.
 
 Los scripts emiten eventos con `progreso.py`. En la terminal muestran el mismo texto de siempre; con `ALTA_EVENTOS=json`, que es como los corre el panel, emiten líneas JSON.
 
@@ -102,12 +121,12 @@ Los scripts emiten eventos con `progreso.py`. En la terminal muestran el mismo t
 
 - Recorre la web: unas 25 páginas útiles (contacto, aviso legal, equipo, servicios, precios, preguntas frecuentes), sin blog ni otros idiomas. Si la web tiene captcha, usa un navegador.
 - Toma los teléfonos, emails y WhatsApp de los links y los datos de schema.org. Con eso y el texto de las páginas, Claude arma la ficha sin inventar datos.
-- Guarda `borradores/<dominio>.json` con una entrada de `clinicas.json` por sede. Además incluye:
+- Guarda `borradores/<dominio>.json` con una clínica por sede. Además incluye:
   - lo que hay que completar (marcado como `COMPLETAR`)
   - los datos que la web no publica
   - las contradicciones entre páginas
   - la URL de donde salió cada dato
-- **No toca `clinicas.json`**: revisá el borrador, completá lo que falte y copiá la entrada.
+- Con `--importar`, carga cada sede en la base como "por revisar", y se revisa y se da de alta desde el panel. Sin esa opción, solo deja el archivo.
 
 Detalles de la estrategia en [`docs/estrategia-extraccion-web.md`](docs/estrategia-extraccion-web.md).
 

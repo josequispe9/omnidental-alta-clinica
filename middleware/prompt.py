@@ -1,4 +1,4 @@
-"""Arma el prompt del agente de Retell a partir de los datos de la clínica (clinicas.json)."""
+"""Arma el prompt del agente de Retell a partir de los datos de la clínica (formato clinicas.example.json)."""
 
 DIAS = ["lunes", "martes", "miercoles", "jueves", "viernes", "sabado", "domingo"]
 

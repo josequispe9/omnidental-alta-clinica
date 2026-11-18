@@ -22,10 +22,10 @@ Variables (en el .env de la carpeta principal):
   GHL_API_VERSION (opcional, por defecto 2021-07-28)
 
 Uso (normalmente se corre desde ../alta.py, que además crea el agente de Retell):
-  python alta_ghl.py ../clinicas.json --clinica dental-sol --location <locationId> --dry-run
-  python alta_ghl.py ../clinicas.json --clinica dental-sol --location <locationId>
+  python alta_ghl.py dental-sol --location <locationId> --dry-run
+  python alta_ghl.py dental-sol --location <locationId>
 
-Al terminar guarda los IDs en ../registro.json, indexados por locationId (el ID de la clínica).
+Lee la clínica de la base (datos.py) y al terminar guarda ahí los IDs de GHL.
 """
 import argparse
 import json
@@ -41,6 +41,7 @@ import ghl_oauth
 
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), ".."))
 from progreso import evento  # noqa: E402
+import datos  # noqa: E402
 
 BASE = "https://services.leadconnectorhq.com"
 
@@ -48,7 +49,6 @@ BASE = "https://services.leadconnectorhq.com"
 # ---------- utilidades ----------
 
 REQUERIDAS = ("GHL_AGENCY_TOKEN", "GHL_COMPANY_ID", "GHL_CLIENT_ID", "GHL_CLIENT_SECRET")
-REGISTRO = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "registro.json")
 
 
 def slug(texto):
@@ -141,7 +141,7 @@ def crear_profesional(sub, cfg, company_id, location_id):
     return u.get("id") or u.get("user", {}).get("id")
 
 
-# clinicas.json: calendario.horario = {"lunes": [["09:30", "13:30"], ["16:30", "20:30"]], ...}
+# datos de la clínica: calendario.horario = {"lunes": [["09:30", "13:30"], ["16:30", "20:30"]], ...}
 DIAS_SEMANA = ["domingo", "lunes", "martes", "miercoles", "jueves", "viernes", "sabado"]  # índice = día de GHL
 DIAS_GHL = ["sunday", "monday", "tuesday", "wednesday", "thursday", "friday", "saturday"]
 
@@ -194,7 +194,7 @@ def crear_calendario(sub, cfg, location_id, user_id):
     existentes = sub.pedir("GET", "/calendars/", params={"locationId": location_id}).get("calendars", [])
     for c in existentes:
         if c.get("name") == cal["nombre"]:
-            # se actualizan horario y duración por si cambiaron en clinicas.json
+            # se actualizan horario y duración por si cambiaron los datos de la clínica
             sub.pedir("PUT", f"/calendars/{c['id']}", json={
                 "slotDuration": cal["duracion_min"], "slotDurationUnit": "mins",
                 "slotInterval": cal["duracion_min"], "slotIntervalUnit": "mins",
@@ -412,62 +412,42 @@ def alta_ghl(cfg, location_id, dry_run=False):
     estado["notification_profesional_id_confirmation"] = ids.get("confirmation")
     estado["pipeline_id"], estado["etapas"] = crear_pipeline(sub, cfg, location_id)
     estado["etapa_turno_agendado"] = estado["etapas"].get("Turno agendado")
-    previo = {}
-    if os.path.exists(REGISTRO):
-        with open(REGISTRO) as f:
-            previo = json.load(f).get(location_id, {})
+    previo = datos.registro(location_id) or {}
     estado["menu_llamadas_id"], estado["vista_token"] = crear_menu_llamadas(agencia, location_id,
                                                                            previo.get("vista_token"))
     return estado
 
 
-def leer_clinica(ruta, slug_clinica=None):
-    """Acepta un JSON con una clínica o una lista de clínicas (clinicas.json); en la lista se elige por slug."""
-    with open(ruta) as f:
-        datos = json.load(f)
-    if isinstance(datos, dict):
-        return datos
-    if not slug_clinica:
-        sys.exit(f"{ruta} tiene varias clínicas: elegí una con --clinica ({', '.join(c['slug'] for c in datos)})")
-    for c in datos:
-        if c.get("slug") == slug_clinica:
-            return c
-    sys.exit(f"No existe la clínica '{slug_clinica}' en {ruta}")
+def leer_clinica(slug_clinica):
+    c = datos.clinica(slug_clinica)
+    if not c:
+        sys.exit(f"No existe la clínica '{slug_clinica}' en la base (cargala desde el panel o con datos.py importar)")
+    return c
 
 
-def guardar_registro(cfg, estado, ruta=REGISTRO):
-    """Guarda los IDs de GHL en registro.json, indexado por locationId (el ID de la clínica)."""
-    registro = {}
-    if os.path.exists(ruta):
-        with open(ruta) as f:
-            registro = json.load(f)
-    entrada = registro.setdefault(estado["location_id"], {})
+def guardar_registro(cfg, estado):
+    """Guarda en la base los IDs de GHL de la clínica ."""
     estado = dict(estado)
-    entrada.update({"slug": cfg.get("slug") or slug(cfg["clinica"]), "clinica": cfg["clinica"],
-                    "timezone": cfg["perfil"]["timezone"], "vista_token": estado.pop("vista_token", None),
-                    "ghl": estado})
-    with open(ruta, "w") as f:
-        json.dump(registro, f, indent=2, ensure_ascii=False)
-    return ruta
+    vista_token = estado.pop("vista_token", None)
+    datos.guardar_ghl(cfg["slug"], estado["location_id"], estado, vista_token)
 
 
 def main():
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    ap.add_argument("clinicas_json", help="lista de clínicas (../clinicas.json) o el JSON de una sola")
-    ap.add_argument("--clinica", help="slug de la clínica dentro de la lista")
+    ap.add_argument("slug", help="slug de la clínica en la base")
     ap.add_argument("--location", required=True, help="ID de la subcuenta de GHL")
     ap.add_argument("--dry-run", action="store_true", help="muestra los pedidos sin enviarlos")
     args = ap.parse_args()
 
     ghl_oauth.cargar_env(() if args.dry_run else REQUERIDAS)
-    cfg = leer_clinica(args.clinicas_json, args.clinica)
+    cfg = leer_clinica(args.slug)
     estado = alta_ghl(cfg, args.location, args.dry_run)
 
     if args.dry_run:
         print("\nDry-run terminado. No se envió nada a GHL.")
         return
-    ruta = guardar_registro(cfg, estado)
-    print(f"\nAlta en GHL lista. IDs guardados en {os.path.abspath(ruta)}")
+    guardar_registro(cfg, estado)
+    print(f"\nAlta en GHL lista. IDs guardados en {datos.RUTA}")
     print(json.dumps(estado, indent=2, ensure_ascii=False))
 
 

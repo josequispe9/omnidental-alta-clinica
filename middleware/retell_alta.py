@@ -1,11 +1,11 @@
-"""Crea (o actualiza) el agente de Retell de una clínica y lo guarda en registro.json.
+"""Crea (o actualiza) el agente de Retell de una clínica y guarda sus IDs en la base (datos.py).
 
 Uso:
   python retell_alta.py <slug> --location <locationId>             # crea o actualiza y publica
   python retell_alta.py <slug> --location <locationId> --dry-run   # muestra lo que enviaría
 
 Necesita RETELL_APIKEY y MIDDLEWARE_URL en el .env de la carpeta principal, y que la clínica
-ya tenga el alta de GHL hecha (registro.json). Si la clínica ya tiene agente, lo actualiza en vez de crear otro.
+ya tenga el alta de GHL hecha. Si la clínica ya tiene agente, lo actualiza en vez de crear otro.
 """
 import argparse
 import json
@@ -23,9 +23,8 @@ import ghl_oauth  # noqa: E402  (solo para leer el .env)
 
 sys.path.insert(0, RAIZ)
 from progreso import evento  # noqa: E402
+import datos  # noqa: E402
 
-REGISTRO = os.path.join(RAIZ, "registro.json")
-CLINICAS = os.path.join(RAIZ, "clinicas.json")
 BASE = "https://api.retellai.com"
 MODELO = "gpt-4.1"
 
@@ -142,15 +141,13 @@ def cuerpo_agente(c, llm_id, token):
 
 
 def alta_retell(slug, location_id, dry_run=False):
-    with open(CLINICAS) as f:
-        c = next((x for x in json.load(f) if x["slug"] == slug), None)
+    c = datos.clinica(slug)
     if not c:
-        sys.exit(f"No existe la clínica '{slug}' en clinicas.json")
-    with open(REGISTRO) as f:
-        registro = json.load(f)
-    if location_id not in registro:
-        sys.exit(f"{location_id} no está en registro.json: corré primero el alta de GHL")
-    previo = registro[location_id].get("retell", {})
+        sys.exit(f"No existe la clínica '{slug}' en la base")
+    reg = datos.registro(location_id)
+    if not reg:
+        sys.exit(f"La subcuenta {location_id} no tiene clínica en la base: corré primero el alta de GHL")
+    previo = reg.get("retell") or {}
 
     # Secreto de la clínica: se genera una vez y se reutiliza en las actualizaciones
     token = previo.get("token") or secrets.token_urlsafe(24)
@@ -198,12 +195,10 @@ def alta_retell(slug, location_id, dry_run=False):
     if viejas:
         evento("retell", "R4", f"Versiones viejas borradas: {sorted(viejas)}", texto=f"[R4] Versiones viejas borradas: {sorted(viejas)}")
 
-    registro[location_id]["retell"] = {"agent_id": agent_id, "llm_id": llm_id, "version_publicada": version,
-                                       "token": token}
-    with open(REGISTRO, "w") as f:
-        json.dump(registro, f, indent=2, ensure_ascii=False)
-    print(f"IDs guardados en {REGISTRO}")
-    return registro[location_id]["retell"]
+    retell_ids = {"agent_id": agent_id, "llm_id": llm_id, "version_publicada": version, "token": token}
+    datos.guardar_retell(location_id, retell_ids)
+    print(f"IDs guardados en {datos.RUTA}")
+    return retell_ids
 
 
 if __name__ == "__main__":

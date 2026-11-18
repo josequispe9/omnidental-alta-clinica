@@ -27,7 +27,6 @@ import ghl
 import llamadas
 
 RAIZ = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..")
-LLAMADAS = os.path.join(RAIZ, "llamadas.json")  # call_id -> clínica y contacto (para el webhook)
 # Retell firma con la API key marcada como "webhook" en su panel. Si no es la misma que RETELL_APIKEY,
 # se pone en RETELL_WEBHOOK_KEY. (ghl.py ya cargó el .env de la carpeta principal)
 RETELL_FIRMA_KEY = os.getenv("RETELL_WEBHOOK_KEY") or os.environ["RETELL_APIKEY"]
@@ -77,28 +76,15 @@ async def leer_firmado(request: Request) -> dict:
 
 
 def clinica_por_agente(agent_id: str):
-    with open(ghl.REGISTRO) as f:
-        for location_id, c in json.load(f).items():
-            if c.get("retell", {}).get("agent_id") == agent_id:
-                return location_id
-    raise HTTPException(404, f"agente {agent_id} sin clínica en registro.json")
-
-
-def _llamadas():
-    if os.path.exists(LLAMADAS):
-        with open(LLAMADAS) as f:
-            return json.load(f)
-    return {}
+    location_id = ghl.datos.location_por_agente(agent_id)
+    if not location_id:
+        raise HTTPException(404, f"agente {agent_id} sin clínica en la base")
+    return location_id
 
 
 def recordar_contacto(call_id, location_id, contact_id, forzar=False):
     """Contacto al que va la nota de la llamada: el primero registrado, o el que agendó un turno."""
-    datos = _llamadas()
-    if call_id in datos and not forzar:
-        return
-    datos[call_id] = {"location_id": location_id, "contact_id": contact_id}
-    with open(LLAMADAS, "w") as f:
-        json.dump(datos, f, indent=2)
+    ghl.datos.recordar_llamada(call_id, location_id, contact_id, forzar)
 
 
 def en_palabras(iso: str) -> str:
@@ -184,7 +170,7 @@ async def webhook(request: Request):
         return Response(status_code=204)
 
     loc = clinica_por_agente(call.get("agent_id"))
-    contacto = _llamadas().get(call.get("call_id"), {}).get("contact_id")
+    contacto = (ghl.datos.llamada(call.get("call_id")) or {}).get("contact_id")
     if not contacto and call.get("from_number"):
         contacto, _ = ghl.buscar_o_crear_cliente(loc, "Paciente sin nombre", call["from_number"])
     if not contacto:

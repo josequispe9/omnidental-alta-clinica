@@ -13,7 +13,6 @@ Uso:
 Si ya existe una subcuenta con el nombre de la clínica, no crea otra: devuelve la existente.
 """
 import argparse
-import json
 import os
 import re
 import subprocess
@@ -28,6 +27,7 @@ RAIZ = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, os.path.join(RAIZ, "ghl-alta"))
 import ghl_oauth  # noqa: E402
 from progreso import evento, resultado  # noqa: E402
+import datos  # noqa: E402
 
 APP = "https://app.gohighlevel.com"
 CDP = os.getenv("BRAVE_CDP", "http://127.0.0.1:9222")
@@ -37,10 +37,9 @@ PAISES = {"AR": "Argentina", "ES": "Spain", "MX": "Mexico", "CL": "Chile", "UY":
 
 
 def leer_clinica(slug):
-    with open(os.path.join(RAIZ, "clinicas.json")) as f:
-        c = next((x for x in json.load(f) if x["slug"] == slug), None)
+    c = datos.clinica(slug)
     if not c:
-        sys.exit(f"No existe la clínica '{slug}' en clinicas.json")
+        sys.exit(f"No existe la clínica '{slug}' en la base (cargala desde el panel o con datos.py importar)")
     return c
 
 
@@ -176,7 +175,7 @@ def esperar_app_instalada(location_id, segundos=90):
 
 def main():
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    ap.add_argument("slug", help="slug de la clínica en clinicas.json")
+    ap.add_argument("slug", help="slug de la clínica en la base (datos.py listar)")
     ap.add_argument("--snapshot", default="Blank Snapshot", help="snapshot a elegir (por defecto Blank Snapshot)")
     ap.add_argument("--alta", action="store_true", help="al terminar, correr alta.py con el locationId")
     args = ap.parse_args()

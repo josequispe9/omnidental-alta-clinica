@@ -100,15 +100,15 @@ def _fila(cid):
 
 
 def _links(f):
-    if f["estado"] != db.LISTA or not f["location_id"]:
+    if not f["location_id"]:
         return {}
-    r = f["resultado"] or {}
+    retell = f["retell"] or {}
     mw = os.getenv("MIDDLEWARE_URL", "").rstrip("/")
     links = {"ghl": f"https://app.gohighlevel.com/v2/location/{f['location_id']}/dashboard"}
-    if r.get("agent_id"):
-        links["retell"] = f"https://dashboard.retellai.com/agents/{r['agent_id']}"
-    if r.get("vista_token"):
-        links["llamadas"] = f"{mw}/llamadas?location={f['location_id']}&token={r['vista_token']}"
+    if retell.get("agent_id"):
+        links["retell"] = f"https://dashboard.retellai.com/agents/{retell['agent_id']}"
+    if f["vista_token"]:
+        links["llamadas"] = f"{mw}/llamadas?location={f['location_id']}&token={f['vista_token']}"
     return links
 
 
@@ -119,11 +119,7 @@ def detalle(cid: int):
     return {**_resumen(f), "datos": datos, "revision": f["revision"], "fuentes": f["fuentes"],
             "extra": f["extra"], "resultado": f["resultado"], "captura": bool(f["captura"]),
             "links": _links(f),
-            "problemas": validar.errores(datos, _slugs_ajenos(cid)) if datos and f["estado"] in EDITABLE else []}
-
-
-def _slugs_ajenos(cid):
-    return {f["slug"] for f in db.listar() if f["id"] != cid and f["slug"] and f["datos"]}
+            "problemas": validar.errores(datos, cid) if datos and f["estado"] in EDITABLE else []}
 
 
 EDITABLE = (db.POR_REVISAR, db.ERROR_ALTA)
@@ -135,7 +131,7 @@ def guardar(cid: int, datos: dict):
     if f["estado"] not in EDITABLE:
         raise HTTPException(409, "Solo se puede editar una clínica por revisar o con error en el alta")
     db.actualizar(cid, datos=datos, slug=datos.get("slug"), nombre=datos.get("clinica"))
-    return {"ok": True, "problemas": validar.errores(datos, _slugs_ajenos(cid))}
+    return {"ok": True, "problemas": validar.errores(datos, cid)}
 
 
 @app.post("/api/clinicas/{cid}/prompt")
@@ -152,18 +148,13 @@ def validar_y_encolar(cid: int, datos: dict):
     f = _fila(cid)
     if f["estado"] not in EDITABLE:
         raise HTTPException(409, "Esta clínica no está para validar")
-    problemas = validar.errores(datos, _slugs_ajenos(cid))
-    extra = f["extra"] or {}
-    slug_previo = extra.get("_slug_validado")
-    if not problemas and validar.slug_en_clinicas(datos["slug"]) and datos["slug"] != slug_previo:
-        problemas.append(f"slug: '{datos['slug']}' ya existe en clinicas.json (cargada a mano): elegí otro")
+    problemas = validar.errores(datos, cid)
     db.actualizar(cid, datos=datos, slug=datos.get("slug"), nombre=datos.get("clinica"))
     if problemas:
         return {"ok": False, "problemas": problemas}
-    validar.guardar_en_clinicas(datos, slug_previo)
-    db.actualizar(cid, extra={**extra, "_slug_validado": datos["slug"]}, estado=db.EN_COLA_ALTA, encolada=time.time(),
-                  etapa="subcuenta", paso="", avance=0, mensaje="Validada: en cola para el alta", error=None)
-    db.agregar_evento(cid, "revision", "validada", "info", "Datos validados y guardados en clinicas.json")
+    db.actualizar(cid, estado=db.EN_COLA_ALTA, encolada=time.time(), etapa="subcuenta", paso="", avance=0,
+                  mensaje="Validada: en cola para el alta", error=None)
+    db.agregar_evento(cid, "revision", "validada", "info", "Datos validados: en cola para el alta")
     return {"ok": True, "problemas": []}
 
 

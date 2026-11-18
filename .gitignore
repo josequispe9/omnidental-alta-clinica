@@ -21,3 +21,8 @@ borradores/
 # Panel de administración
 admin.db
 clinicas.json.tmp
+
+# Base de datos (datos de clínicas, IDs y secretos) y respaldo de los archivos viejos
+omnidental.db
+omnidental.db-*
+respaldo-archivos/

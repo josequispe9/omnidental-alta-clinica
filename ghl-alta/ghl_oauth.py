@@ -10,9 +10,8 @@ Desde otro script:
   token = token_subcuenta("<locationId>")
 
 Lee GHL_CLIENT_ID y GHL_CLIENT_SECRET del .env de la carpeta principal (o de variables de entorno).
-Guarda los tokens en .ghl_oauth.json (solo lectura para tu usuario). No lo subas al repositorio.
+Guarda los tokens en la base del proyecto (omnidental.db, tabla tokens).
 """
-import json
 import os
 import sys
 import time
@@ -23,7 +22,8 @@ import requests
 
 BASE = "https://services.leadconnectorhq.com"
 AQUI = os.path.dirname(os.path.abspath(__file__))
-ARCHIVO_TOKENS = os.path.join(AQUI, ".ghl_oauth.json")
+sys.path.insert(0, os.path.join(AQUI, ".."))
+import datos as datos_db  # noqa: E402  (tokens en la base: tabla tokens)
 REDIRECT_URI = os.getenv("GHL_REDIRECT_URI", "http://localhost:3000/callback")
 PUERTO = urllib.parse.urlparse(REDIRECT_URI).port or 3000
 
@@ -57,16 +57,14 @@ def cargar_env(requeridas=("GHL_CLIENT_ID", "GHL_CLIENT_SECRET")):
 
 
 def guardar(datos):
-    fd = os.open(ARCHIVO_TOKENS, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
-    with os.fdopen(fd, "w") as f:
-        json.dump(datos, f, indent=2)
+    datos_db.guardar_token("ghl_oauth", datos)
 
 
 def leer():
-    if not os.path.exists(ARCHIVO_TOKENS):
+    datos = datos_db.leer_token("ghl_oauth")
+    if not datos:
         sys.exit("No hay tokens guardados. Corré primero: python ghl_oauth.py instalar")
-    with open(ARCHIVO_TOKENS) as f:
-        return json.load(f)
+    return datos
 
 
 def pedir_token(**campos):
@@ -130,7 +128,7 @@ def instalar():
     print("\nInstalación OK.")
     print(f"  userType: {t.get('userType')}  companyId: {t.get('companyId')}")
     print(f"  scopes concedidos: {t.get('scope')}")
-    print(f"  tokens guardados en {ARCHIVO_TOKENS}")
+    print(f"  tokens guardados en {datos_db.RUTA}")
 
 
 # ---------- tokens ----------

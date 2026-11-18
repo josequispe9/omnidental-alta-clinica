@@ -1,7 +1,7 @@
 """Páginas para ver las llamadas de una clínica desde GHL (menú personalizado en modo iframe).
 
 La transcripción y la grabación no se copian a GHL: se leen de Retell en el momento.
-Acceso: ?location=<locationId>&token=<vista_token de la clínica en registro.json>
+Acceso: ?location=<locationId>&token=<vista_token de la clínica en la base>
 """
 import html
 import os
