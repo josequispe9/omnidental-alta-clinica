@@ -217,5 +217,5 @@ Para probar un agente: con el middleware y ngrok corriendo, entrá a Retell → 
 - Las subcuentas de GHL se crean desde el navegador (la API requiere Agency Pro). Si GHL cambia su panel, hay que ajustar `crear_subcuenta.py`.
 - Los correos salen del dominio compartido de GHL y suelen llegar a spam.
 - El middleware corre en local: si ngrok o la máquina se apagan, el agente no puede usar sus herramientas. El prompt le indica tomar los datos y avisar que la clínica va a llamar.
-- Sin Twilio todavía: el agente se prueba con llamadas web y pide el teléfono al paciente.
+- Sin Twilio en la demo (requiere cuenta paga): el agente se prueba con llamadas web y pide el teléfono al paciente. Cómo se conectaría un número por SIP Trunk y cómo se automatizaría para 50 clínicas: [`docs/telefonia-twilio-retell.md`](docs/telefonia-twilio-retell.md).
 - La transcripción y la grabación quedan en Retell. Por defecto el link del audio no vence.
