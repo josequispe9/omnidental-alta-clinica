@@ -219,8 +219,10 @@ Corre en Vercel: **https://omnidental-middleware.vercel.app**. Es el proyecto `o
 
   Se cargan con `vercel env add`, nunca en el repo.
 
+**Despliegue:** el proyecto está conectado al repo de GitHub. Cada push a `main` se despliega solo en producción, y cada push a otra rama genera una versión de prueba (preview) con su propia URL.
+
 ```bash
-npx vercel deploy --prod --scope josequispe-freelance      # desplegar una versión nueva
+npx vercel deploy --prod --scope josequispe-freelance      # desplegar a mano desde tu máquina (opcional)
 npx vercel logs --project omnidental-middleware --scope josequispe-freelance   # ver los logs
 ```
 
